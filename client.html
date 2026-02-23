@@ -521,7 +521,7 @@
 
 <script>
 // ── Config ───────────────────────────────────────────────
-const API_URL = 'https://script.google.com/macros/s/AKfycbyBryhTn4ajucQTDfwlLwMPz2EPirt0WjO5BD9EcnTiT2plXl4DdCiHyJOoQs1xK20Njg/exec?';
+const API_URL = 'PASTE_YOUR_DEPLOYED_SCRIPT_URL_HERE';
 
 // ── State ────────────────────────────────────────────────
 let STATE = {
@@ -1210,22 +1210,47 @@ async function renderPlanTab(sub, access) {
 
 async function renderRecipientsTab(sub, access) {
   const dc = qs('dashboard-content');
-  dc.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div></div>';
+  dc.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div>';
 
-  // For now show plan card's recipientsAdded count
-  // Full recipient list requires a getRecipients action (future)
-  dc.innerHTML = `
-    <div style="display:flex; flex-direction:column; gap:12px">
-      <div class="section-header">
-        <div class="section-title">Recipients</div>
-        <div class="section-action" onclick="showAddRecipientModal()">+ Add Recipient</div>
-      </div>
-      <div class="empty-state" style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius)">
-        <div class="empty-icon">👤</div>
-        <div class="empty-title">Recipients loaded from server</div>
-        <div class="empty-sub">Full recipient management coming in next update.</div>
-      </div>
+  try {
+    const data       = await api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId || ""}`);
+    const recipients = data.recipients || [];
+
+    const listHtml = recipients.length === 0
+      ? `<div class="empty-state" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:40px">
+          <div class="empty-icon">👤</div>
+          <div class="empty-title">No recipients yet</div>
+          <div class="empty-sub">Add a recipient to start receiving mail.</div>
+        </div>`
+      : `<div class="recipient-list">
+          ${recipients.map(r => `
+            <div class="recipient-item">
+              <div class="recipient-avatar">${initials(r.name)}</div>
+              <div class="recipient-info">
+                <div class="recipient-name">${r.name || '—'}</div>
+                <div class="recipient-company">${r.companyName || r.type || ''}</div>
+              </div>
+              <div class="recipient-status">
+                <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}">${r.status}</span>
+              </div>
+            </div>`).join('')}
+        </div>`;
+
+    dc.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="section-header">
+          <div class="section-title">Recipients</div>
+        </div>
+        ${listHtml}
+      </div>`;
+
+  } catch(err) {
+    dc.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load recipients</div>
+      <div class="empty-sub">${err.message}</div>
     </div>`;
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────
