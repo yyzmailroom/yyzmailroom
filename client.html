@@ -1088,8 +1088,7 @@ async function renderDashboard(sub, access) {
     <div id="tabs-bar">
       <div class="tabs">
         <div class="tab active" onclick="switchTab('mail')"  id="tab-mail">Mail Log</div>
-        <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plan</div>
-        <div class="tab"        onclick="switchTab('recipients')" id="tab-recipients">Recipients</div>
+        <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plans</div>
         <div class="tab"        onclick="switchTab('agents')" id="tab-agents">Pickup Agents</div>
       </div>
     </div>
@@ -1124,10 +1123,9 @@ function switchTab(tab) {
   });
   const sub = STATE.activeSub;
   const access = STATE.access;
-  if (tab === 'mail')       renderMailTab(sub, access);
-  if (tab === 'plan')       renderPlanTab(sub, access);
-  if (tab === 'recipients') renderRecipientsTab(sub, access);
-  if (tab === 'agents')     renderAgentsTab(sub, access);
+  if (tab === 'mail')   renderMailTab(sub, access);
+  if (tab === 'plan')   renderPlansTab(sub, access);
+  if (tab === 'agents') renderAgentsTab(sub, access);
 }
 
 function renderMailTab(sub, access) {
@@ -1238,78 +1236,342 @@ function renderMailList(mailLog, sub) {
   return `<div class="mail-list">${items}</div>`;
 }
 
-function renderPlanTab(sub, access) {
-  const dc = qs('dashboard-content');
-  const pc = STATE.planCard;
+// ── My Plans Tab — unified plan card view ────────────────
+function renderPlansTab(sub, access) {
+  const dc   = qs('dashboard-content');
+  const pc   = STATE.planCard;
+  const recs = STATE.recipients || [];
+  const allSubs = STATE.allSubs || [sub];
 
-  const mailLimit    = pc ? (parseInt(pc.mailLimit)    || 0) : 0;
-  const parcelLimit  = pc ? (parseInt(pc.parcelLimit)  || 0) : 0;
-  const mailsUsed    = pc ? (parseInt(pc.mailsUsed)    || 0) : 0;
-  const parcelsUsed  = pc ? (parseInt(pc.parcelsUsed)  || 0) : 0;
-  const mailPct      = mailLimit  ? Math.min(100, Math.round(mailsUsed  / mailLimit  * 100)) : 0;
-  const parcelPct    = parcelLimit? Math.min(100, Math.round(parcelsUsed/ parcelLimit* 100)) : 0;
-  const mailBar      = mailPct   < 60 ? 'safe' : mailPct   < 85 ? 'warn' : 'danger';
-  const parcelBar    = parcelPct < 60 ? 'safe' : parcelPct < 85 ? 'warn' : 'danger';
-
-  const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode].filter(Boolean).join(', ') : '—';
+  // Build one card per subscription
+  const cardsHtml = allSubs.map((s, idx) => {
+    // For active sub use cached data, others just show header
+    const isActive = s.subscriptionId === sub.subscriptionId;
+    const thisPc   = isActive ? pc : null;
+    return buildPlanCard(s, thisPc, isActive ? recs : [], isActive);
+  }).join('');
 
   dc.innerHTML = `
-    <div style="display:flex; flex-direction:column; gap:16px">
-
-      <div class="card" style="padding:20px">
-        <div class="section-header" style="margin-bottom:16px">
-          <div class="section-title">Plan Details</div>
-          <span class="pill scanned">${sub.accessStatus}</span>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:13px;">
-          <div>
-            <div style="color:var(--ink-4); font-size:11px; margin-bottom:3px; text-transform:uppercase; letter-spacing:.05em">Plan</div>
-            <div style="font-weight:500">${sub.planName}</div>
-          </div>
-          <div>
-            <div style="color:var(--ink-4); font-size:11px; margin-bottom:3px; text-transform:uppercase; letter-spacing:.05em">Billing</div>
-            <div style="font-weight:500">${pc ? pc.billingCycle : '—'}</div>
-          </div>
-          <div>
-            <div style="color:var(--ink-4); font-size:11px; margin-bottom:3px; text-transform:uppercase; letter-spacing:.05em">Period</div>
-            <div style="font-weight:500">${pc ? fmtDate(pc.currentPeriodStart) + ' – ' + fmtDate(pc.currentPeriodEnd) : '—'}</div>
-          </div>
-          <div>
-            <div style="color:var(--ink-4); font-size:11px; margin-bottom:3px; text-transform:uppercase; letter-spacing:.05em">Location</div>
-            <div style="font-weight:500">YYZ Main Office</div>
-          </div>
-        </div>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      ${cardsHtml}
+      <div style="text-align:center;padding:12px;font-size:12px;color:var(--ink-4);border:1px dashed var(--border);border-radius:var(--radius)">
+        To cancel a plan, start a new subscription, or make other changes —
+        <strong style="color:var(--ink-3)">contact us via chat support</strong>.
       </div>
-
-      <div class="card" style="padding:20px">
-        <div class="section-title" style="margin-bottom:16px">Usage This Period</div>
-        <div style="display:flex; flex-direction:column; gap:14px">
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px">
-              <span style="font-weight:500">Mail</span>
-              <span style="color:var(--ink-3)">${mailsUsed} / ${mailLimit}</span>
-            </div>
-            <div class="usage-bar" style="height:6px"><div class="usage-bar-fill ${mailBar}" style="width:${mailPct}%"></div></div>
-          </div>
-          ${parcelLimit > 0 ? `
-          <div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:6px">
-              <span style="font-weight:500">Parcels</span>
-              <span style="color:var(--ink-3)">${parcelsUsed} / ${parcelLimit}</span>
-            </div>
-            <div class="usage-bar" style="height:6px"><div class="usage-bar-fill ${parcelBar}" style="width:${parcelPct}%"></div></div>
-          </div>` : ''}
-        </div>
-      </div>
-
-      ${pc && pc.forwardingEnabled === 'TRUE' || pc && pc.forwardingEnabled === true ? `
-      <div class="card" style="padding:20px">
-        <div class="section-title" style="margin-bottom:12px">Forwarding Address</div>
-        <div style="font-size:13px; color:var(--ink-2)">${fwdAddr}</div>
-        ${pc.forwardingInstructions ? `<div style="font-size:12px; color:var(--ink-4); margin-top:6px">${pc.forwardingInstructions}</div>` : ''}
-      </div>` : ''}
-
     </div>`;
+}
+
+function buildPlanCard(sub, pc, recipients, isLoaded) {
+  const label = k => `<div style="color:var(--ink-4);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${k}</div>`;
+  const val   = v => `<div style="font-size:13px;font-weight:500;color:var(--ink)">${v}</div>`;
+
+  // Status pill colour
+  const pillClass = {
+    ACTIVE:'scanned', CANCELED_WITH_ACCESS:'warning',
+    PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
+  }[sub.accessStatus] || 'stored';
+
+  // Billing cycle from sub
+  const billing = sub.interval === 'year' ? 'Annual' : 'Monthly';
+
+  // Period
+  const period = pc
+    ? (fmtDate(pc.currentPeriodStart) + ' – ' + fmtDate(pc.currentPeriodEnd))
+    : (sub.accessUntilDate ? '— – ' + fmtDate(sub.accessUntilDate) : '—');
+
+  // Location virtual office address — from planCard locationId resolved to Locations
+  // For now we show the configured address from planCard or fallback
+  const officeAddr = '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
+
+  // Usage
+  const mailLimit   = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
+  const parcelLimit = pc ? (parseInt(pc.parcelLimit) || 0) : 0;
+  const mailsUsed   = pc ? (parseInt(pc.mailsUsed)   || 0) : 0;
+  const parcelsUsed = pc ? (parseInt(pc.parcelsUsed) || 0) : 0;
+  const mailPct     = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
+  const parcelPct   = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
+  const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
+
+  // Forwarding
+  const hasFwd = pc && (pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true);
+  const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
+
+  // Recipients
+  const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const activeR  = recipients.filter(r => r.status === 'active').length;
+  const pendingR = recipients.filter(r => r.status !== 'active').length;
+  const canAddR  = activeR < maxR;
+
+  const recipientRows = recipients.length === 0
+    ? `<div style="font-size:12px;color:var(--ink-4);padding:10px 0">No mail recipients set up yet.</div>`
+    : recipients.map(r => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--ink-2);flex-shrink:0">${initials(r.name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;line-height:1.3">${r.name}</div>
+            <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName : r.type === 'company' ? 'Business' : 'Individual'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:10px">${r.status === 'active' ? 'Active' : r.status === 'pending' ? 'Pending' : r.status}</span>
+            ${r.status === 'active' ? '<span style="font-size:11px;color:var(--ink-4)">Contact reception to edit</span>' : ''}
+          </div>
+        </div>`).join('');
+
+  const addRecipientForm = isLoaded && canAddR ? `
+    <div style="margin-top:4px" id="add-rec-toggle-row-${sub.subscriptionId}">
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px"
+        onclick="toggleAddRecForm('${sub.subscriptionId}','${sub.planCardId}')">
+        + Add Name to Mailbox
+      </button>
+      <span style="font-size:11px;color:var(--ink-4);margin-left:8px">${activeR} of ${maxR} slots used</span>
+    </div>
+    <div id="add-rec-form-${sub.subscriptionId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:10px">Who should receive mail at this address?</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="nr-name-${sub.subscriptionId}" placeholder="e.g. Jane Smith or Acme Corp">
+        </div>
+        <div class="form-group">
+          <label>Also known as <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="nr-aka-${sub.subscriptionId}" placeholder="e.g. trading name, maiden name...">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="nr-type-${sub.subscriptionId}">
+            <option value="individual">Individual / Person</option>
+            <option value="company">Business / Company</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Email notifications</label>
+          <select id="nr-notify-${sub.subscriptionId}">
+            <option value="true">Yes — notify on mail arrival</option>
+            <option value="false">No notifications</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" id="nr-submit-${sub.subscriptionId}"
+          onclick="submitAddRecipient('${sub.planCardId}','${sub.subscriptionId}')">Submit</button>
+        <button class="btn btn-secondary btn-sm"
+          onclick="toggleAddRecForm('${sub.subscriptionId}','${sub.planCardId}')">Cancel</button>
+      </div>
+    </div>` : isLoaded && !canAddR ? `
+    <div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
+      All ${maxR} mailbox name slot${maxR > 1 ? 's' : ''} filled. Contact reception to make changes.
+    </div>` : '';
+
+  // Forwarding section
+  const fwdSection = hasFwd ? `
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">Forwarding Address</div>
+        <button class="btn btn-secondary btn-sm" id="fwd-edit-btn-${sub.subscriptionId}"
+          onclick="toggleFwdEdit('${sub.subscriptionId}','${sub.planCardId}')">Edit</button>
+      </div>
+      <div id="fwd-display-${sub.subscriptionId}" style="font-size:13px;color:var(--ink-2)">
+        ${fwdAddr || '<span style="color:var(--ink-4)">Not set</span>'}
+        ${pc && pc.forwardingInstructions ? `<div style="font-size:12px;color:var(--ink-4);margin-top:4px">${pc.forwardingInstructions}</div>` : ''}
+      </div>
+      <div id="fwd-form-${sub.subscriptionId}" style="display:none;margin-top:10px">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Street Address</label>
+            <input type="text" id="fwd-addr-${sub.subscriptionId}" value="${pc ? pc.forwardingAddress || '' : ''}" placeholder="123 Main St">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="fwd-city-${sub.subscriptionId}" value="${pc ? pc.forwardingCity || '' : ''}" placeholder="Toronto">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Province / State</label>
+            <input type="text" id="fwd-prov-${sub.subscriptionId}" value="${pc ? pc.forwardingProvince || '' : ''}" placeholder="ON">
+          </div>
+          <div class="form-group">
+            <label>Postal / ZIP</label>
+            <input type="text" id="fwd-postal-${sub.subscriptionId}" value="${pc ? pc.forwardingPostalCode || '' : ''}" placeholder="M5V 2H1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" id="fwd-country-${sub.subscriptionId}" value="${pc ? pc.forwardingCountry || 'Canada' : 'Canada'}" placeholder="Canada">
+        </div>
+        <div class="form-group">
+          <label>Special Instructions <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="fwd-instructions-${sub.subscriptionId}" value="${pc ? pc.forwardingInstructions || '' : ''}" placeholder="e.g. leave at door, signature required...">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-primary btn-sm" id="fwd-submit-${sub.subscriptionId}"
+            onclick="submitFwdUpdate('${sub.planCardId}','${sub.subscriptionId}')">Save Address</button>
+          <button class="btn btn-secondary btn-sm"
+            onclick="toggleFwdEdit('${sub.subscriptionId}','${sub.planCardId}')">Cancel</button>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+
+      <!-- Plan card header -->
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:2px">${sub.planName || '—'}</div>
+          <div style="font-size:12px;color:var(--ink-4)">${billing} · ${sub.planAmount ? '$' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
+        </div>
+        <span class="pill ${pillClass}" style="font-size:11px;white-space:nowrap;flex-shrink:0">${sub.accessStatus.replace(/_/g,' ')}</span>
+      </div>
+
+      <div style="padding:18px 20px">
+
+        <!-- Info grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+          <div>${label('Billing Period')}${val(period)}</div>
+          <div>${label('Billing Cycle')}${val(billing)}</div>
+          <div style="grid-column:1/-1">
+            ${label('Virtual Office Address')}
+            <div style="font-size:13px;font-weight:500;color:var(--ink)">${officeAddr}</div>
+            <div style="font-size:11px;color:var(--ink-4);margin-top:2px">This is your registered mailing address</div>
+          </div>
+        </div>
+
+        <!-- Usage -->
+        <div style="margin-bottom:20px;padding:14px;background:var(--bg);border-radius:var(--radius-sm)">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:10px">Usage This Period</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span>Mail</span><span style="color:var(--ink-3)">${mailsUsed} / ${mailLimit || '—'}</span>
+              </div>
+              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(mailPct)}" style="width:${mailPct}%"></div></div>
+            </div>
+            ${parcelLimit > 0 ? `
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span>Parcels</span><span style="color:var(--ink-3)">${parcelsUsed} / ${parcelLimit}</span>
+              </div>
+              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(parcelPct)}" style="width:${parcelPct}%"></div></div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- Recipients / Mailbox Names -->
+        <div>
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px">Mailbox Names</div>
+          <div style="font-size:11px;color:var(--ink-4);margin-bottom:10px">People or businesses authorized to receive mail at this address</div>
+          ${recipientRows}
+          ${addRecipientForm}
+        </div>
+
+        ${fwdSection}
+
+      </div>
+    </div>`;
+}
+
+// ── Toggle helpers for plan card forms ───────────────────
+function toggleAddRecForm(subId, planCardId) {
+  const form = qs('add-rec-form-' + subId);
+  const row  = qs('add-rec-toggle-row-' + subId);
+  if (!form) return;
+  const open = form.style.display === 'none';
+  form.style.display = open ? 'block' : 'none';
+  // toggle button label
+  const btn = row ? row.querySelector('button') : null;
+  if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Name to Mailbox';
+}
+
+function toggleFwdEdit(subId, planCardId) {
+  const display = qs('fwd-display-' + subId);
+  const form    = qs('fwd-form-' + subId);
+  const btn     = qs('fwd-edit-btn-' + subId);
+  if (!form) return;
+  const open = form.style.display === 'none';
+  if (display) display.style.display = open ? 'none' : 'block';
+  form.style.display = open ? 'block' : 'none';
+  if (btn) btn.textContent = open ? 'Cancel' : 'Edit';
+}
+
+async function submitAddRecipient(planCardId, subId) {
+  const nameEl = qs('nr-name-' + subId);
+  const name   = nameEl ? nameEl.value.trim() : '';
+  if (!name) { toast('Name is required', 'error'); return; }
+
+  const btn = qs('nr-submit-' + subId);
+  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+
+  try {
+    const result = await apiPost({
+      action:          'addRecipient',
+      uuid:            STATE.uuid,
+      planCardId:      planCardId,
+      name:            name,
+      companyName:     (qs('nr-aka-' + subId) || {}).value || '',
+      type:            (qs('nr-type-' + subId) || {}).value || 'individual',
+      notifyOnArrival: (qs('nr-notify-' + subId) || {}).value !== 'false',
+      language:        'en'
+    });
+
+    if (result.status === 'ok') {
+      toast(name + ' added — pending staff activation', 'success');
+      STATE.recipients.push({
+        recipientId: result.recipientId || 'RCP_NEW_' + Date.now(),
+        planCardId,
+        name,
+        companyName: (qs('nr-aka-' + subId) || {}).value || '',
+        type:        (qs('nr-type-' + subId) || {}).value || 'individual',
+        status:      'pending'
+      });
+      renderPlansTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+  }
+}
+
+async function submitFwdUpdate(planCardId, subId) {
+  const btn = qs('fwd-submit-' + subId);
+  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+
+  try {
+    const result = await apiPost({
+      action:               'updateForwarding',
+      uuid:                 STATE.uuid,
+      planCardId:           planCardId,
+      forwardingAddress:    (qs('fwd-addr-'    + subId) || {}).value || '',
+      forwardingCity:       (qs('fwd-city-'    + subId) || {}).value || '',
+      forwardingProvince:   (qs('fwd-prov-'    + subId) || {}).value || '',
+      forwardingPostalCode: (qs('fwd-postal-'  + subId) || {}).value || '',
+      forwardingCountry:    (qs('fwd-country-' + subId) || {}).value || '',
+      forwardingInstructions:(qs('fwd-instructions-' + subId) || {}).value || ''
+    });
+
+    if (result.status === 'ok') {
+      toast('Forwarding address updated', 'success');
+      // Update local planCard cache
+      if (STATE.planCard) {
+        STATE.planCard.forwardingAddress     = (qs('fwd-addr-'    + subId) || {}).value || '';
+        STATE.planCard.forwardingCity        = (qs('fwd-city-'    + subId) || {}).value || '';
+        STATE.planCard.forwardingProvince    = (qs('fwd-prov-'    + subId) || {}).value || '';
+        STATE.planCard.forwardingPostalCode  = (qs('fwd-postal-'  + subId) || {}).value || '';
+        STATE.planCard.forwardingCountry     = (qs('fwd-country-' + subId) || {}).value || '';
+        STATE.planCard.forwardingInstructions= (qs('fwd-instructions-' + subId) || {}).value || '';
+      }
+      renderPlansTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed to update');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Save Address'; }
+  }
 }
 
 function renderRecipientsTab(sub, access) {
