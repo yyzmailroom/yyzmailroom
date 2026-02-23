@@ -561,6 +561,7 @@ async function boot() {
     qs('header-name').innerHTML = `<strong>${cached.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${cached.role}</span>`;
     hideLoading();
     await loadTasks();
+    warmRecipientCache(); // pre-warm in background — makes first search instant
     renderWorkspace();
     api('uuid=' + encodeURIComponent(STATE.uuid)).then(f => { if (f && f.status === 'staff') setStaffCache(STATE.uuid, f); }).catch(()=>{});
     return;
@@ -583,6 +584,7 @@ async function boot() {
 
     qs('header-name').innerHTML = `<strong>${data.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${data.role}</span>`;
     await loadTasks();
+    warmRecipientCache(); // pre-warm in background — makes first search instant
     renderWorkspace();
 
   } catch(err) {
@@ -610,7 +612,7 @@ function showBlocked(msg) {
     </div>`;
 }
 
-async async function loadTasks() {
+async function loadTasks() {
   try {
     const data = await api(`uuid=${STATE.uuid}&action=getTasks`);
     STATE.tasks = data.tasks || [];
@@ -1134,7 +1136,7 @@ async function submitLogMail() {
   const isConfidential = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
   const type           = qs('log-type') ? qs('log-type').value : 'letter';
   const isScanPlan     = pc && pc.planType && pc.planType.toLowerCase().includes('scan');
-  const scanMandatory  = isScanPlan && type === 'letter' && !isConfidential && !isSpecial;
+  const scanMandatory  = !isSpecial && isScanPlan && type === 'letter' && !isConfidential;
   const scanUrl        = qs('log-scan') ? qs('log-scan').value.trim() : '';
   if (scanMandatory && !scanUrl) {
     toast('Scan image URL is required for scan plans', 'error');
@@ -1262,12 +1264,17 @@ async function renderStaffMailLog(container) {
 let _allStaffMail = [];
 
 async function loadStaffMailLog() {
+  const el = qs('ml-list');
+  if (el) el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ink-4);font-size:13px">Loading...</div>';
   try {
     const data = await api(`uuid=${STATE.uuid}&action=getMailLogStaff&limit=100`);
     _allStaffMail = data.mailLog || [];
     renderStaffMailList(_allStaffMail);
+    toast('Mail log refreshed', 'success');
   } catch(e) {
-    toast('Could not load mail log', 'error');
+    console.error('loadStaffMailLog error:', e);
+    toast('Could not refresh: ' + e.message, 'error');
+    if (qs('ml-list')) qs('ml-list').innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Failed to load. Check connection.</div>';
   }
 }
 
@@ -1491,6 +1498,132 @@ function openMailDetail(mailId) {
 
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+// ── Special Case Release Modal ────────────────────────────
+function openSpecialCaseReleaseModal(mailId) {
+  const m = _allStaffMail.find(x => x.mailId === mailId);
+  if (!m) return;
+
+  const existing = qs('special-release-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'special-release-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px">🔍 Special Case Item</div>
+        <button onclick="qs('special-release-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3);cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--ink-3);margin-bottom:14px">
+        This item has no recipient assigned. You can:
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-secondary" onclick="qs('special-release-modal').remove();openAssignRecipientModal('${mailId}')">
+          📋 Assign to Recipient (starts storage clock)
+        </button>
+        <button class="btn btn-secondary" onclick="discardSpecialCase('${mailId}')">
+          🗑 Mark as Discarded
+        </button>
+        <button class="btn btn-secondary" onclick="qs('special-release-modal').remove()">
+          Cancel — keep in queue
+        </button>
+      </div>
+      <div style="font-size:11px;color:var(--ink-4);margin-top:14px">
+        Storage clock starts from the date of recipient assignment.
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function discardSpecialCase(mailId) {
+  try {
+    await apiPost({ action: 'updateMailStatus', uuid: STATE.uuid, mailId, status: 'discarded', note: 'Staff discarded unmatched special case item' });
+    qs('special-release-modal') && qs('special-release-modal').remove();
+    toast('Item marked as discarded', 'success');
+    await loadStaffMailLog();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function openAssignRecipientModal(mailId) {
+  const existing = qs('assign-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'assign-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px">Assign Recipient</div>
+        <button onclick="qs('assign-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3);cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--ink-3);margin-bottom:14px">
+        Search and assign a recipient. Storage clock starts from today.
+      </div>
+      <div class="form-group recipient-search-wrap">
+        <input type="text" id="assign-search" placeholder="Type name or company..."
+          oninput="searchRecipientsForAssign(this.value)" autocomplete="off">
+        <div id="assign-results" class="recipient-results" style="display:none"></div>
+      </div>
+      <div id="assign-selected" style="display:none;padding:10px;background:var(--bg);border-radius:var(--radius-sm);font-size:13px;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary" id="assign-confirm-btn" disabled
+          onclick="confirmAssignRecipient('${mailId}')">Assign & Start Clock</button>
+        <button class="btn btn-secondary" onclick="qs('assign-modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+let _assignTarget = null;
+
+function searchRecipientsForAssign(query) {
+  const results = qs('assign-results');
+  if (!results) return;
+  if (!query || query.length < 1) { results.style.display = 'none'; return; }
+  const q    = query.toLowerCase();
+  const hits = (_recipientCache || []).filter(r =>
+    [r.name, r.companyName, r.planCardId, r.planName].join(' ').toLowerCase().includes(q)
+  ).slice(0, 8);
+  results.style.display = hits.length ? 'block' : 'none';
+  results.innerHTML = hits.map(r => `
+    <div class="recipient-result-item" onclick="selectAssignTarget(${JSON.stringify(r).replace(/"/g,'&quot;')})">
+      <div class="rri-name">${r.name}${r.companyName?' · <span style="color:var(--ink-4)">'+r.companyName+'</span>':''}</div>
+      <div class="rri-sub">${r.planName || r.planCardId}</div>
+    </div>`).join('');
+}
+
+function selectAssignTarget(r) {
+  _assignTarget = r;
+  qs('assign-results') && (qs('assign-results').style.display = 'none');
+  const sel = qs('assign-selected');
+  if (sel) { sel.style.display = 'block'; sel.textContent = 'Selected: ' + r.name + ' (' + r.planCardId + ')'; }
+  const btn = qs('assign-confirm-btn');
+  if (btn) btn.disabled = false;
+}
+
+async function confirmAssignRecipient(mailId) {
+  if (!_assignTarget) { toast('Select a recipient', 'error'); return; }
+  try {
+    await apiPost({
+      action: 'assignMailRecipient', uuid: STATE.uuid, mailId,
+      recipientId:   _assignTarget.recipientId,
+      recipientName: _assignTarget.name,
+      planCardId:    _assignTarget.planCardId,
+      clientId:      _assignTarget.clientId,
+      subscriptionId:_assignTarget.subscriptionId
+    });
+    qs('assign-modal') && qs('assign-modal').remove();
+    toast('Recipient assigned — storage clock started', 'success');
+    _assignTarget = null;
+    await loadStaffMailLog();
+    await loadTasks();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ── Init ─────────────────────────────────────────────────
