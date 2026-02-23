@@ -1716,6 +1716,171 @@ async function submitFwdUpdate(planCardId, key) {
 }
 
 
+// ── Agents Tab ────────────────────────────────────────────
+function renderAgentsTab(sub, access) {
+  const dc     = qs('dashboard-content');
+  const agents = STATE.agents || [];
+  const pc     = STATE.planCard;
+  const maxA   = 3;
+  const activeA = agents.filter(a => a.status === 'active' || !a.status).length;
+  const canAdd  = activeA < maxA;
+
+  const agentRows = agents.length === 0
+    ? `<div style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px">
+        No pickup agents added yet. Add up to ${maxA} authorized agents.
+      </div>`
+    : agents.map(a => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink-2);flex-shrink:0">
+          ${(a.name||'?')[0].toUpperCase()}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">${a.name}</div>
+          <div style="font-size:11px;color:var(--ink-4);margin-top:1px">
+            ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : ''}
+            ${a.phone ? ' · ' + a.phone : ''}
+            ${a.notes ? ' · ' + a.notes : ''}
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" style="color:var(--red);border-color:var(--red-border)"
+          onclick="removeAgent('${a.agentId}', '${(a.name||'').replace(/'/g,"\'")}')">Remove</button>
+      </div>`).join('');
+
+  dc.innerHTML = `
+    <div>
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="section-title">Pickup Agents</div>
+        <div style="font-size:12px;color:var(--ink-4)">${activeA} of ${maxA} slots used</div>
+      </div>
+      <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)">
+        <div style="padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-3)">
+          These people are authorized to pick up your mail. They'll need to show valid ID matching what's on file.
+        </div>
+        ${agentRows}
+      </div>
+
+      ${canAdd ? `
+      <div id="agent-add-section">
+        <div id="agent-add-toggle-row">
+          <button class="btn btn-secondary" onclick="toggleAddAgentForm()">+ Add Pickup Agent</button>
+        </div>
+        <div id="agent-add-form" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:12px;box-shadow:var(--shadow)">
+          <div style="font-size:13px;font-weight:600;margin-bottom:14px">New Pickup Agent</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Full Name *</label>
+              <input type="text" id="ag-name" placeholder="Jane Smith">
+            </div>
+            <div class="form-group">
+              <label>Phone</label>
+              <input type="text" id="ag-phone" placeholder="416-555-0100">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>ID Type</label>
+              <select id="ag-idtype">
+                <option value="Driver's Licence">Driver's Licence</option>
+                <option value="Passport">Passport</option>
+                <option value="Health Card">Health Card</option>
+                <option value="Employee ID">Employee ID</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Last 4 digits of ID</label>
+              <input type="text" id="ag-idlast4" placeholder="1234" maxlength="4">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Notes <span style="color:var(--ink-4);text-transform:none;font-weight:400">(optional)</span></label>
+            <input type="text" id="ag-notes" placeholder="e.g. My assistant, alternate contact...">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn btn-primary" id="ag-submit" onclick="submitAddAgent('${sub.planCardId}')">Add Agent</button>
+            <button class="btn btn-secondary" onclick="toggleAddAgentForm()">Cancel</button>
+          </div>
+        </div>
+      </div>` : `
+      <div style="padding:10px 14px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
+        Maximum of ${maxA} agents reached. Remove one to add another.
+      </div>`}
+    </div>`;
+}
+
+function toggleAddAgentForm() {
+  const form = qs('agent-add-form');
+  const row  = qs('agent-add-toggle-row');
+  if (!form) return;
+  const open = form.style.display === 'none';
+  form.style.display = open ? 'block' : 'none';
+  if (row) {
+    const btn = row.querySelector('button');
+    if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Pickup Agent';
+  }
+}
+
+async function submitAddAgent(planCardId) {
+  const name = qs('ag-name') ? qs('ag-name').value.trim() : '';
+  if (!name) { toast('Please enter the agent name', 'error'); return; }
+
+  const btn = qs('ag-submit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+
+  try {
+    const result = await apiPost({
+      action:   'addAgent',
+      uuid:     STATE.uuid,
+      planCardId,
+      name,
+      idType:   qs('ag-idtype')  ? qs('ag-idtype').value  : '',
+      idLast4:  qs('ag-idlast4') ? qs('ag-idlast4').value : '',
+      phone:    qs('ag-phone')   ? qs('ag-phone').value   : '',
+      notes:    qs('ag-notes')   ? qs('ag-notes').value   : ''
+    });
+    if (result.status === 'ok') {
+      toast(name + ' added as pickup agent', 'success');
+      // Add to local state immediately
+      STATE.agents.push({
+        agentId:  result.agentId || 'AGT_' + Date.now(),
+        planCardId, name,
+        idType:   qs('ag-idtype')  ? qs('ag-idtype').value  : '',
+        idLast4:  qs('ag-idlast4') ? qs('ag-idlast4').value : '',
+        phone:    qs('ag-phone')   ? qs('ag-phone').value   : '',
+        notes:    qs('ag-notes')   ? qs('ag-notes').value   : '',
+        status:   'active'
+      });
+      renderAgentsTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed to add agent');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Agent'; }
+  }
+}
+
+async function removeAgent(agentId, name) {
+  if (!confirm('Remove ' + name + ' as a pickup agent?')) return;
+  try {
+    const result = await apiPost({
+      action:  'deactivateAgent',
+      uuid:    STATE.uuid,
+      agentId
+    });
+    if (result.status === 'ok') {
+      toast(name + ' removed', 'success');
+      STATE.agents = STATE.agents.filter(a => a.agentId !== agentId);
+      renderAgentsTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+  }
+}
+
+
 // ── Refresh Mail Log ─────────────────────────────────────
 async function refreshMailLog() {
   const btn = qs('refresh-btn');
