@@ -270,6 +270,7 @@
   .pill.shredded    { background: #F0F0F5; color: var(--ink-4); }
   .pill.ready_to_ship { background: var(--amber-bg); color: var(--amber); }
   .pill.confidential { background: var(--red-dim); color: var(--red); }
+  .mail-item-done { opacity: 0.65; }
   .storage-warn {
     font-size: 10px; color: var(--amber); font-weight: 500;
   }
@@ -1129,29 +1130,45 @@ function switchTab(tab) {
 }
 
 function renderMailTab(sub, access) {
-  const dc = qs('dashboard-content');
+  const dc     = qs('dashboard-content');
+  const mailLog = STATE.mailLog || [];
 
-  try {
-    const mailLog = STATE.mailLog;
+  // Stats — only show if single plan, otherwise skip Mail This Period
+  const allSubs = STATE.allSubs || [sub];
+  const multiPlan = allSubs.length > 1;
+  const pc = STATE.planCard;
 
-    // Stats — use real planCard limits from cache
-    const pc         = STATE.planCard;
-    const mailLimit  = pc ? (parseInt(pc.mailLimit) || 0) : 0;
-    const mailsUsed  = pc ? (parseInt(pc.mailsUsed) || 0) : 0;
-    const dueSoon = mailLog.filter(m => {
-      if (['shredded','discarded','picked_up','forwarded'].includes(m.status)) return false;
-      const days = daysUntil(m.storageDueDate);
-      return days !== null && days >= 0 && days <= 5;
-    }).length;
-    const readyPickup = mailLog.filter(m => m.status === 'arrived' || m.status === 'scanned').length;
-    const forwarded   = mailLog.filter(m => m.status === 'forwarded').length;
-    const usePct      = mailLimit ? Math.min(100, Math.round(mailsUsed / mailLimit * 100)) : 0;
-    const barClass    = usePct < 60 ? 'safe' : usePct < 85 ? 'warn' : 'danger';
+  const readyPickup = mailLog.filter(m => ['arrived','scanned','stored'].includes(m.status)).length;
+  const dueSoon     = mailLog.filter(m => {
+    const d = daysUntil(m.storageDueDate);
+    return d !== null && d >= 0 && d <= 5 && !['picked_up','forwarded','shredded','discarded'].includes(m.status);
+  }).length;
+  const forwarded   = mailLog.filter(m => m.status === 'forwarded').length;
 
-    dc.innerHTML = `
-      <div>
-        <!-- Stats row -->
-        <div class="stats-row" style="margin-bottom:20px">
+  const statsHtml = multiPlan
+    ? `<div class="stats-row" style="margin-bottom:20px">
+        <div class="stat-card ${readyPickup > 0 ? 'blue' : ''}">
+          <div class="stat-label">Ready for Pickup</div>
+          <div class="stat-value">${readyPickup}</div>
+          <div class="stat-sub">${readyPickup > 0 ? 'items waiting' : 'all clear'}</div>
+        </div>
+        <div class="stat-card ${dueSoon > 0 ? 'amber' : ''}">
+          <div class="stat-label">Expiring Soon</div>
+          <div class="stat-value">${dueSoon}</div>
+          <div class="stat-sub">${dueSoon > 0 ? 'within 5 days' : 'nothing urgent'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Forwarded</div>
+          <div class="stat-value">${forwarded}</div>
+          <div class="stat-sub">this period</div>
+        </div>
+      </div>`
+    : (() => {
+        const mailsUsed  = pc ? (parseInt(pc.mailsUsed)  || 0) : 0;
+        const mailLimit  = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
+        const usePct     = mailLimit ? Math.min(100, Math.round(mailsUsed / mailLimit * 100)) : 0;
+        const barClass   = usePct < 60 ? 'safe' : usePct < 85 ? 'warn' : 'danger';
+        return `<div class="stats-row" style="margin-bottom:20px">
           <div class="stat-card accent">
             <div class="stat-label">Mail This Period</div>
             <div class="stat-value">${mailsUsed}</div>
@@ -1173,70 +1190,42 @@ function renderMailTab(sub, access) {
             <div class="stat-value">${forwarded}</div>
             <div class="stat-sub">this period</div>
           </div>
+        </div>`;
+      })();
+
+  dc.innerHTML = `
+    <div>
+      ${statsHtml}
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="section-title">Mail Log</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="mail-status-filter" onchange="applyMailFilter()"
+            style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:var(--white);color:var(--ink-2)">
+            <option value="">All</option>
+            <option value="pending_pickup">Pending Pickup</option>
+            <option value="arrived">Arrived</option>
+            <option value="scanned">Scanned</option>
+            <option value="stored">Stored</option>
+            <option value="forwarded">Forwarded</option>
+            <option value="picked_up">Picked Up</option>
+            <option value="shredded">Shredded</option>
+          </select>
+          <div class="section-action" onclick="refreshMailLog()" id="refresh-btn" style="cursor:pointer">↻</div>
         </div>
-
-        <!-- Mail list -->
-        <div class="section-header">
-          <div class="section-title">Mail Log</div>
-          <div style="display:flex;gap:12px;align-items:center">
-            <div class="section-action" onclick="refreshMailLog()" id="refresh-btn">↻ Refresh</div>
-            <div class="section-action" style="color:var(--ink-4);cursor:default">Most recent first</div>
-          </div>
-        </div>
-        ${renderMailList(mailLog, sub)}
-      </div>`;
-
-  } catch (err) {
-    dc.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">⚠️</div>
-      <div class="empty-title">Could not load mail log</div>
-      <div class="empty-sub">${err.message}</div>
-    </div>`;
-  }
-}
-
-function renderMailList(mailLog, sub) {
-  const blurred = !sub.canAccess;
-  if (!mailLog.length) return `
-    <div class="card">
-      <div class="empty-state">
-        <div class="empty-icon">📬</div>
-        <div class="empty-title">No mail yet</div>
-        <div class="empty-sub">Your mail log will appear here once items are received.</div>
+      </div>
+      <div id="mail-list-container">
+        ${renderMailList(mailLog, sub, '')}
       </div>
     </div>`;
-
-  const sorted = [...mailLog].sort((a,b) => new Date(b.loggedAt) - new Date(a.loggedAt));
-  const items  = sorted.map(m => {
-    const isParcel = m.type === 'parcel';
-    const icon     = isParcel ? '📦' : '✉️';
-    const days     = daysUntil(m.storageDueDate);
-    const warnHtml = days !== null && days >= 0 && days <= 5 && !['picked_up','forwarded','shredded','discarded'].includes(m.status)
-      ? `<div class="storage-warn ${days <= 2 ? 'urgent' : ''}">⏰ Expires in ${days}d</div>`
-      : '';
-    const confHtml = m.confidential === 'TRUE' || m.confidential === true
-      ? `<span class="pill confidential">Confidential</span>` : '';
-
-    return `
-      <div class="mail-item ${blurred ? 'blurred' : ''}">
-        <div class="mail-icon ${isParcel ? 'parcel' : 'letter'}">${icon}</div>
-        <div class="mail-info">
-          <div class="mail-recipient">${m.recipientName || 'Unknown'}</div>
-          <div class="mail-date">${fmtDateTime(m.loggedAt)}${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}</div>
-          ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
-        </div>
-        <div class="mail-meta">
-          <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
-          ${confHtml}
-          ${warnHtml}
-        </div>
-      </div>`;
-  }).join('');
-
-  return `<div class="mail-list">${items}</div>`;
 }
 
-// ── My Plans Tab — unified plan card view ────────────────
+function applyMailFilter() {
+  const filter = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
+  const container = qs('mail-list-container');
+  if (container) container.innerHTML = renderMailList(STATE.mailLog || [], STATE.activeSub, filter);
+}
+
+
 function renderPlansTab(sub, access) {
   const dc   = qs('dashboard-content');
   const pc   = STATE.planCard;
@@ -1318,46 +1307,37 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
         </div>`).join('');
 
   const addRecipientForm = isLoaded && canAddR ? `
-    <div style="margin-top:4px" id="add-rec-toggle-row-${sub.subscriptionId}">
+    <div style="margin-top:4px" id="add-rec-toggle-row-${sub.planCardId}">
       <button class="btn btn-secondary btn-sm" style="margin-top:8px"
-        onclick="toggleAddRecForm('${sub.subscriptionId}','${sub.planCardId}')">
+        onclick="toggleAddRecForm('${sub.planCardId}','${sub.planCardId}')">
         + Add Name to Mailbox
       </button>
       <span style="font-size:11px;color:var(--ink-4);margin-left:8px">${activeR} of ${maxR} slots used</span>
     </div>
-    <div id="add-rec-form-${sub.subscriptionId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+    <div id="add-rec-form-${sub.planCardId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
       <div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:10px">Who should receive mail at this address?</div>
       <div class="form-row">
         <div class="form-group">
           <label>Name *</label>
-          <input type="text" id="nr-name-${sub.subscriptionId}" placeholder="e.g. Jane Smith or Acme Corp">
+          <input type="text" id="nr-name-${sub.planCardId}" placeholder="e.g. Jane Smith or Acme Corp">
         </div>
         <div class="form-group">
           <label>Also known as <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="nr-aka-${sub.subscriptionId}" placeholder="e.g. trading name, maiden name...">
+          <input type="text" id="nr-aka-${sub.planCardId}" placeholder="e.g. trading name, maiden name...">
         </div>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Type</label>
-          <select id="nr-type-${sub.subscriptionId}">
-            <option value="individual">Individual / Person</option>
-            <option value="company">Business / Company</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Email notifications</label>
-          <select id="nr-notify-${sub.subscriptionId}">
-            <option value="true">Yes — notify on mail arrival</option>
-            <option value="false">No notifications</option>
-          </select>
-        </div>
+      <div class="form-group" style="max-width:240px">
+        <label>Type</label>
+        <select id="nr-type-${sub.planCardId}">
+          <option value="individual">Individual / Person</option>
+          <option value="company">Business / Company</option>
+        </select>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary btn-sm" id="nr-submit-${sub.subscriptionId}"
-          onclick="submitAddRecipient('${sub.planCardId}','${sub.subscriptionId}')">Submit</button>
+        <button class="btn btn-primary btn-sm" id="nr-submit-${sub.planCardId}"
+          onclick="submitAddRecipient('${sub.planCardId}','${sub.planCardId}')">Submit</button>
         <button class="btn btn-secondary btn-sm"
-          onclick="toggleAddRecForm('${sub.subscriptionId}','${sub.planCardId}')">Cancel</button>
+          onclick="toggleAddRecForm('${sub.planCardId}','${sub.planCardId}')">Cancel</button>
       </div>
     </div>` : isLoaded && !canAddR ? `
     <div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
@@ -1369,47 +1349,47 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
     <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">Forwarding Address</div>
-        <button class="btn btn-secondary btn-sm" id="fwd-edit-btn-${sub.subscriptionId}"
-          onclick="toggleFwdEdit('${sub.subscriptionId}','${sub.planCardId}')">Edit</button>
+        <button class="btn btn-secondary btn-sm" id="fwd-edit-btn-${sub.planCardId}"
+          onclick="toggleFwdEdit('${sub.planCardId}','${sub.planCardId}')">Edit</button>
       </div>
-      <div id="fwd-display-${sub.subscriptionId}" style="font-size:13px;color:var(--ink-2)">
+      <div id="fwd-display-${sub.planCardId}" style="font-size:13px;color:var(--ink-2)">
         ${fwdAddr || '<span style="color:var(--ink-4)">Not set</span>'}
         ${pc && pc.forwardingInstructions ? `<div style="font-size:12px;color:var(--ink-4);margin-top:4px">${pc.forwardingInstructions}</div>` : ''}
       </div>
-      <div id="fwd-form-${sub.subscriptionId}" style="display:none;margin-top:10px">
+      <div id="fwd-form-${sub.planCardId}" style="display:none;margin-top:10px">
         <div class="form-row">
           <div class="form-group">
             <label>Street Address</label>
-            <input type="text" id="fwd-addr-${sub.subscriptionId}" value="${pc ? pc.forwardingAddress || '' : ''}" placeholder="123 Main St">
+            <input type="text" id="fwd-addr-${sub.planCardId}" value="${pc ? pc.forwardingAddress || '' : ''}" placeholder="123 Main St">
           </div>
           <div class="form-group">
             <label>City</label>
-            <input type="text" id="fwd-city-${sub.subscriptionId}" value="${pc ? pc.forwardingCity || '' : ''}" placeholder="Toronto">
+            <input type="text" id="fwd-city-${sub.planCardId}" value="${pc ? pc.forwardingCity || '' : ''}" placeholder="Toronto">
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
             <label>Province / State</label>
-            <input type="text" id="fwd-prov-${sub.subscriptionId}" value="${pc ? pc.forwardingProvince || '' : ''}" placeholder="ON">
+            <input type="text" id="fwd-prov-${sub.planCardId}" value="${pc ? pc.forwardingProvince || '' : ''}" placeholder="ON">
           </div>
           <div class="form-group">
             <label>Postal / ZIP</label>
-            <input type="text" id="fwd-postal-${sub.subscriptionId}" value="${pc ? pc.forwardingPostalCode || '' : ''}" placeholder="M5V 2H1">
+            <input type="text" id="fwd-postal-${sub.planCardId}" value="${pc ? pc.forwardingPostalCode || '' : ''}" placeholder="M5V 2H1">
           </div>
         </div>
         <div class="form-group">
           <label>Country</label>
-          <input type="text" id="fwd-country-${sub.subscriptionId}" value="${pc ? pc.forwardingCountry || 'Canada' : 'Canada'}" placeholder="Canada">
+          <input type="text" id="fwd-country-${sub.planCardId}" value="${pc ? pc.forwardingCountry || 'Canada' : 'Canada'}" placeholder="Canada">
         </div>
         <div class="form-group">
           <label>Special Instructions <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="fwd-instructions-${sub.subscriptionId}" value="${pc ? pc.forwardingInstructions || '' : ''}" placeholder="e.g. leave at door, signature required...">
+          <input type="text" id="fwd-instructions-${sub.planCardId}" value="${pc ? pc.forwardingInstructions || '' : ''}" placeholder="e.g. leave at door, signature required...">
         </div>
         <div style="display:flex;gap:8px;margin-top:4px">
-          <button class="btn btn-primary btn-sm" id="fwd-submit-${sub.subscriptionId}"
-            onclick="submitFwdUpdate('${sub.planCardId}','${sub.subscriptionId}')">Save Address</button>
+          <button class="btn btn-primary btn-sm" id="fwd-submit-${sub.planCardId}"
+            onclick="submitFwdUpdate('${sub.planCardId}','${sub.planCardId}')">Save Address</button>
           <button class="btn btn-secondary btn-sm"
-            onclick="toggleFwdEdit('${sub.subscriptionId}','${sub.planCardId}')">Cancel</button>
+            onclick="toggleFwdEdit('${sub.planCardId}','${sub.planCardId}')">Cancel</button>
         </div>
       </div>
     </div>` : '';
@@ -1475,20 +1455,21 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
 
 // ── Toggle helpers for plan card forms ───────────────────
 function toggleAddRecForm(subId, planCardId) {
-  const form = qs('add-rec-form-' + subId);
-  const row  = qs('add-rec-toggle-row-' + subId);
+  const key  = subId || planCardId;
+  const form = document.getElementById('add-rec-form-' + key);
+  const row  = document.getElementById('add-rec-toggle-row-' + key);
   if (!form) return;
   const open = form.style.display === 'none';
   form.style.display = open ? 'block' : 'none';
-  // toggle button label
   const btn = row ? row.querySelector('button') : null;
   if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Name to Mailbox';
 }
 
 function toggleFwdEdit(subId, planCardId) {
-  const display = qs('fwd-display-' + subId);
-  const form    = qs('fwd-form-' + subId);
-  const btn     = qs('fwd-edit-btn-' + subId);
+  const key     = subId || planCardId;
+  const display = document.getElementById('fwd-display-' + key);
+  const form    = document.getElementById('fwd-form-' + key);
+  const btn     = document.getElementById('fwd-edit-btn-' + key);
   if (!form) return;
   const open = form.style.display === 'none';
   if (display) display.style.display = open ? 'none' : 'block';
@@ -1496,35 +1477,35 @@ function toggleFwdEdit(subId, planCardId) {
   if (btn) btn.textContent = open ? 'Cancel' : 'Edit';
 }
 
-async function submitAddRecipient(planCardId, subId) {
-  const nameEl = qs('nr-name-' + subId);
+async function submitAddRecipient(planCardId, key) {
+  const nameEl = document.getElementById('nr-name-' + key);
   const name   = nameEl ? nameEl.value.trim() : '';
-  if (!name) { toast('Name is required', 'error'); return; }
+  if (!name) { toast('Please enter a name', 'error'); return; }
 
-  const btn = qs('nr-submit-' + subId);
-  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+  const btn = document.getElementById('nr-submit-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
   try {
+    const akaEl  = document.getElementById('nr-aka-'  + key);
+    const typeEl = document.getElementById('nr-type-' + key);
     const result = await apiPost({
       action:          'addRecipient',
       uuid:            STATE.uuid,
       planCardId:      planCardId,
       name:            name,
-      companyName:     (qs('nr-aka-' + subId) || {}).value || '',
-      type:            (qs('nr-type-' + subId) || {}).value || 'individual',
-      notifyOnArrival: (qs('nr-notify-' + subId) || {}).value !== 'false',
+      companyName:     akaEl  ? akaEl.value.trim()  : '',
+      type:            typeEl ? typeEl.value         : 'individual',
+      notifyOnArrival: true,
       language:        'en'
     });
-
     if (result.status === 'ok') {
-      toast(name + ' added — pending staff activation', 'success');
+      toast(name + ' added — staff will activate shortly', 'success');
       STATE.recipients.push({
         recipientId: result.recipientId || 'RCP_NEW_' + Date.now(),
-        planCardId,
-        name,
-        companyName: (qs('nr-aka-' + subId) || {}).value || '',
-        type:        (qs('nr-type-' + subId) || {}).value || 'individual',
-        status:      'pending'
+        planCardId, name,
+        companyName: akaEl ? akaEl.value.trim() : '',
+        type:        typeEl ? typeEl.value : 'individual',
+        status: 'pending'
       });
       renderPlansTab(STATE.activeSub, STATE.access);
     } else {
@@ -1532,355 +1513,571 @@ async function submitAddRecipient(planCardId, subId) {
     }
   } catch(err) {
     toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Submit'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
   }
 }
 
-async function submitFwdUpdate(planCardId, subId) {
-  const btn = qs('fwd-submit-' + subId);
-  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+
+async function submitFwdUpdate(planCardId, key) {
+  const btn = document.getElementById('fwd-submit-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  const g = id => {
+    const el = document.getElementById(id + key);
+    return el ? el.value.trim() : '';
+  };
 
   try {
     const result = await apiPost({
-      action:               'updateForwarding',
-      uuid:                 STATE.uuid,
-      planCardId:           planCardId,
-      forwardingAddress:    (qs('fwd-addr-'    + subId) || {}).value || '',
-      forwardingCity:       (qs('fwd-city-'    + subId) || {}).value || '',
-      forwardingProvince:   (qs('fwd-prov-'    + subId) || {}).value || '',
-      forwardingPostalCode: (qs('fwd-postal-'  + subId) || {}).value || '',
-      forwardingCountry:    (qs('fwd-country-' + subId) || {}).value || '',
-      forwardingInstructions:(qs('fwd-instructions-' + subId) || {}).value || ''
+      action:                'updateForwarding',
+      uuid:                  STATE.uuid,
+      planCardId:            planCardId,
+      forwardingAddress:     g('fwd-addr-'),
+      forwardingCity:        g('fwd-city-'),
+      forwardingProvince:    g('fwd-prov-'),
+      forwardingPostalCode:  g('fwd-postal-'),
+      forwardingCountry:     g('fwd-country-'),
+      forwardingInstructions: g('fwd-instructions-')
     });
-
     if (result.status === 'ok') {
-      toast('Forwarding address updated', 'success');
-      // Update local planCard cache
+      toast('Forwarding address saved', 'success');
       if (STATE.planCard) {
-        STATE.planCard.forwardingAddress     = (qs('fwd-addr-'    + subId) || {}).value || '';
-        STATE.planCard.forwardingCity        = (qs('fwd-city-'    + subId) || {}).value || '';
-        STATE.planCard.forwardingProvince    = (qs('fwd-prov-'    + subId) || {}).value || '';
-        STATE.planCard.forwardingPostalCode  = (qs('fwd-postal-'  + subId) || {}).value || '';
-        STATE.planCard.forwardingCountry     = (qs('fwd-country-' + subId) || {}).value || '';
-        STATE.planCard.forwardingInstructions= (qs('fwd-instructions-' + subId) || {}).value || '';
+        STATE.planCard.forwardingAddress      = g('fwd-addr-');
+        STATE.planCard.forwardingCity         = g('fwd-city-');
+        STATE.planCard.forwardingProvince     = g('fwd-prov-');
+        STATE.planCard.forwardingPostalCode   = g('fwd-postal-');
+        STATE.planCard.forwardingCountry      = g('fwd-country-');
+        STATE.planCard.forwardingInstructions = g('fwd-instructions-');
       }
       renderPlansTab(STATE.activeSub, STATE.access);
     } else {
-      throw new Error(result.message || 'Failed to update');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Save Address'; }
-  }
-}
-
-function renderRecipientsTab(sub, access) {
-  const dc         = qs('dashboard-content');
-  const pc         = STATE.planCard;
-  const recipients = STATE.recipients || [];
-  const maxR       = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
-  const activeCount = recipients.filter(r => r.status === 'active').length;
-  const canAdd     = activeCount < maxR;
-
-  // Recipients list with add form inline
-  const recipientRows = recipients.map(r => `
-    <div class="recipient-row">
-      <div class="recipient-avatar" style="width:34px;height:34px;font-size:13px;flex-shrink:0">${initials(r.name)}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500">${r.name}</div>
-        <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName + ' · ' : ''}${r.type || 'individual'}</div>
-      </div>
-      <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:11px">${r.status}</span>
-      ${r.status === 'active'
-        ? '<span style="font-size:11px;color:var(--ink-4);margin-left:6px">Contact staff to edit</span>'
-        : ''}
-    </div>`).join('');
-
-  const emptyHtml = recipients.length === 0
-    ? `<div style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px">
-        No recipients added yet.
-      </div>` : '';
-
-  // Add recipient form — only if under limit
-  const addHtml = canAdd ? `
-    <div class="add-recipient-row" id="add-rec-toggle-row">
-      <button class="btn btn-secondary btn-sm" onclick="showAddRecipientForm()" id="show-add-rec-btn">
-        + Add Recipient
-      </button>
-      <span style="font-size:11px;color:var(--ink-4)">${activeCount} of ${maxR} slots used</span>
-    </div>
-    <div id="add-rec-form" style="display:none;padding-top:12px;border-top:1px solid var(--border);margin-top:8px">
-      <div class="form-row">
-        <div class="form-group">
-          <label>Full Name *</label>
-          <input type="text" id="nr-name" placeholder="Jane Smith">
-        </div>
-        <div class="form-group">
-          <label>Company <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="nr-company" placeholder="Acme Corp">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Type</label>
-          <select id="nr-type">
-            <option value="individual">Individual</option>
-            <option value="company">Company</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Notifications</label>
-          <select id="nr-notify">
-            <option value="true">Email on arrival</option>
-            <option value="false">None</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary btn-sm" id="nr-submit" onclick="submitAddRecipient('${sub.planCardId}')">Add Recipient</button>
-        <button class="btn btn-secondary btn-sm" onclick="hideAddRecipientForm()">Cancel</button>
-      </div>
-    </div>` : `
-    <div style="background:var(--amber-bg);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--amber);margin-top:8px">
-      ⚠️ Recipient limit reached (${maxR}/${maxR}). Contact us to upgrade your plan for more slots.
-    </div>`;
-
-  dc.innerHTML = `
-    <div class="plan-card-grid">
-      <div class="plan-card-item">
-        <div class="plan-card-header">
-          <div>
-            <div class="plan-card-name">${pc ? pc.planName || sub.planName || 'Your Plan' : sub.planName || 'Your Plan'}</div>
-            <div class="plan-card-sub">Plan Card · ${sub.planCardId || '—'}</div>
-          </div>
-          <span class="pill scanned" style="font-size:11px">Active</span>
-        </div>
-        ${recipientRows}
-        ${emptyHtml}
-        ${addHtml}
-      </div>
-      <div style="font-size:12px;color:var(--ink-4);padding:4px 2px">
-        To edit or deactivate a recipient, please contact our staff.
-      </div>
-    </div>`;
-}
-
-function showAddRecipientForm() {
-  const form = qs('add-rec-form');
-  const btn  = qs('show-add-rec-btn');
-  if (form) form.style.display = 'block';
-  if (btn)  btn.style.display  = 'none';
-}
-function hideAddRecipientForm() {
-  const form = qs('add-rec-form');
-  const btn  = qs('show-add-rec-btn');
-  if (form) form.style.display = 'none';
-  if (btn)  btn.style.display  = 'block';
-}
-
-async function submitAddRecipient(planCardId) {
-  const name = qs('nr-name') ? qs('nr-name').value.trim() : '';
-  if (!name) { toast('Name is required', 'error'); return; }
-
-  const btn = qs('nr-submit');
-  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
-
-  try {
-    const result = await apiPost({
-      action:          'addRecipient',
-      uuid:            STATE.uuid,
-      planCardId:      planCardId,
-      name:            name,
-      companyName:     qs('nr-company') ? qs('nr-company').value.trim() : '',
-      type:            qs('nr-type') ? qs('nr-type').value : 'individual',
-      notifyOnArrival: qs('nr-notify') ? qs('nr-notify').value === 'true' : true,
-      language:        'en'
-    });
-
-    if (result.status === 'ok') {
-      toast(name + ' added — pending staff activation', 'success');
-      // Update local cache
-      STATE.recipients.push({
-        recipientId: result.recipientId || 'RCP_NEW',
-        planCardId:  planCardId,
-        name:        name,
-        companyName: qs('nr-company') ? qs('nr-company').value.trim() : '',
-        type:        qs('nr-type') ? qs('nr-type').value : 'individual',
-        status:      'pending'
-      });
-      renderRecipientsTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed to add recipient');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Add Recipient'; }
-  }
-}
-
-// ── Agents Tab ───────────────────────────────────────────
-function renderAgentsTab(sub, access) {
-  const dc      = qs('dashboard-content');
-  const agents  = STATE.agents || [];
-  const active  = agents.filter(a => a.status === 'active');
-  const MAX     = 3;
-  const canAdd  = active.length < MAX;
-
-  const agentCards = active.length === 0
-    ? `<div class="empty-state" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:40px">
-        <div class="empty-icon">🚶</div>
-        <div class="empty-title">No pickup agents yet</div>
-        <div class="empty-sub">Add up to 3 people who are authorized to pick up your mail.</div>
-      </div>`
-    : active.map(a => `
-        <div class="recipient-item" style="align-items:flex-start">
-          <div class="recipient-avatar" style="background:#E8F5EE;color:var(--green)">${initials(a.name)}</div>
-          <div class="recipient-info" style="flex:1">
-            <div class="recipient-name">${a.name}</div>
-            <div class="recipient-company">
-              ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : 'No ID on file'}
-              ${a.phone ? ' · ' + a.phone : ''}
-            </div>
-            ${a.notes ? `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">${a.notes}</div>` : ''}
-          </div>
-          <button class="btn btn-secondary btn-sm"
-            onclick="confirmDeactivateAgent('${a.agentId}','${a.name.replace(/'/g,"\'")}')">
-            Remove
-          </button>
-        </div>`).join('');
-
-  const addFormHtml = canAdd ? `
-    <div class="card" style="padding:20px;margin-top:16px" id="add-agent-card">
-      <div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:14px">
-        Add Pickup Agent <span style="font-size:11px;font-weight:400;color:var(--ink-4)">(${active.length}/${MAX} used)</span>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Full Name *</label>
-          <input type="text" id="ag-name" placeholder="Jane Smith" required>
-        </div>
-        <div class="form-group">
-          <label>Phone <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="ag-phone" placeholder="416-555-0123">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>ID Type <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <select id="ag-idtype">
-            <option value="">Not provided</option>
-            <option value="Driver's License">Driver's License</option>
-            <option value="Passport">Passport</option>
-            <option value="Health Card">Health Card</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Last 4 of ID <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="ag-idlast4" placeholder="e.g. 4821" maxlength="4">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Notes <span style="color:var(--ink-4);text-transform:none">(optional — visible to staff)</span></label>
-        <input type="text" id="ag-notes" placeholder="e.g. Business partner, will call ahead...">
-      </div>
-      <button class="btn btn-primary" id="ag-submit-btn" onclick="submitAddAgent('${sub.planCardId}')">
-        Add Agent
-      </button>
-    </div>` : `
-    <div style="background:var(--amber-bg);border-radius:var(--radius);padding:12px 16px;margin-top:16px;font-size:13px;color:var(--amber)">
-      ⚠️ Maximum of ${MAX} active agents reached. Remove an agent to add a new one.
-    </div>`;
-
-  dc.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:0">
-      <div class="section-header" style="margin-bottom:12px">
-        <div class="section-title">Pickup Agents</div>
-        <div style="font-size:12px;color:var(--ink-4)">${active.length} of ${MAX} active</div>
-      </div>
-      <div class="recipient-list">${agentCards}</div>
-      ${addFormHtml}
-    </div>`;
-}
-
-async function submitAddAgent(planCardId) {
-  const btn  = qs('ag-submit-btn');
-  const name = (qs('ag-name') ? qs('ag-name').value.trim() : '');
-  if (!name) { toast('Name is required', 'error'); return; }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="btn-spinner"></span> Adding...';
-
-  try {
-    const result = await apiPost({
-      action:    'addAgent',
-      uuid:      STATE.uuid,
-      planCardId: planCardId,
-      name:      name,
-      phone:     qs('ag-phone') ? qs('ag-phone').value.trim() : '',
-      idType:    qs('ag-idtype') ? qs('ag-idtype').value : '',
-      idLast4:   qs('ag-idlast4') ? qs('ag-idlast4').value.trim() : '',
-      notes:     qs('ag-notes') ? qs('ag-notes').value.trim() : ''
-    });
-
-    if (result.status === 'ok') {
-      toast(name + ' added as pickup agent', 'success');
-      // Update cache directly — no re-fetch needed
-      STATE.agents.push({
-        agentId:   result.agentId || 'AGT_NEW_' + Date.now(),
-        planCardId: planCardId,
-        clientId:  STATE.access.clientId,
-        name:      name,
-        phone:     qs('ag-phone') ? qs('ag-phone').value.trim() : '',
-        idType:    qs('ag-idtype') ? qs('ag-idtype').value : '',
-        idLast4:   qs('ag-idlast4') ? qs('ag-idlast4').value.trim() : '',
-        notes:     qs('ag-notes') ? qs('ag-notes').value.trim() : '',
-        status:    'active'
-      });
-      renderAgentsTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed to add agent');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.innerHTML = 'Add Agent'; }
-  }
-}
-
-function confirmDeactivateAgent(agentId, name) {
-  if (!confirm(`Remove ${name} as a pickup agent? They will no longer be authorized to collect mail.`)) return;
-  deactivateAgent(agentId, name);
-}
-
-async function deactivateAgent(agentId, name) {
-  try {
-    const result = await apiPost({
-      action:  'deactivateAgent',
-      uuid:    STATE.uuid,
-      agentId: agentId
-    });
-    if (result.status === 'ok') {
-      toast(name + ' removed', 'success');
-      STATE.agents = STATE.agents.filter(a => a.agentId !== agentId);
-      renderAgentsTab(STATE.activeSub, STATE.access);
-    } else {
       throw new Error(result.message || 'Failed');
     }
   } catch(err) {
     toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Address'; }
   }
 }
 
+
 // ── Refresh Mail Log ─────────────────────────────────────
 async function refreshMailLog() {
-  const btn = qs('refresh-btn');
-  if (btn) { btn.textContent = '↻ Refreshing...'; }
   const sub = STATE.activeSub;
   try {
     const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
     STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
-    renderMailTab(sub, STATE.access);
-    // Re-attach the refresh button listener after re-render
+    const container = qs('mail-list-container');
+    const filter    = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
+    if (container) {
+      container.innerHTML = renderMailList(STATE.mailLog, sub, filter);
+    } else {
+      renderMailTab(sub, STATE.access);
+    }
+    toast('Refreshed', 'success');
+  } catch(e) {
+    toast('Could not refresh', 'error');
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────
+boot();
+</script>
+</body>
+</html>function renderMailList(mailLog, sub, statusFilter) {
+  const blurred = !sub.canAccess;
+  if (!mailLog.length) return `
+    <div class="card">
+      <div class="empty-state">
+        <div class="empty-icon">📬</div>
+        <div class="empty-title">No mail yet</div>
+        <div class="empty-sub">Your mail log will appear here once items are received.</div>
+      </div>
+    </div>`;
+
+  // Sort: active first (arrived/scanned/stored), then forwarded, then picked_up/shredded last
+  const priority = s => (['arrived','scanned','stored'].includes(s) ? 0 : s === 'forwarded' ? 1 : s === 'picked_up' ? 3 : 2);
+  let sorted = [...mailLog].sort((a,b) => {
+    const pd = priority(a.status) - priority(b.status);
+    if (pd !== 0) return pd;
+    return new Date(b.loggedAt) - new Date(a.loggedAt);
+  });
+
+  // Apply status filter
+  if (statusFilter) {
+    if (statusFilter === 'pending_pickup') {
+      sorted = sorted.filter(m => ['arrived','scanned','stored'].includes(m.status));
+    } else {
+      sorted = sorted.filter(m => m.status === statusFilter);
+    }
+  }
+
+  if (!sorted.length) return `
+    <div class="card" style="padding:32px;text-align:center">
+      <div style="color:var(--ink-4);font-size:13px">No mail matches this filter.</div>
+    </div>`;
+
+  const items = sorted.map(m => {
+    const isParcel   = m.type === 'parcel';
+    const icon       = isParcel ? '📦' : '✉️';
+    const days       = daysUntil(m.storageDueDate);
+    const isActive   = ['arrived','scanned','stored'].includes(m.status);
+    const isReleased = ['picked_up','forwarded','shredded','discarded'].includes(m.status);
+
+    // Days until expiry banner
+    let urgencyHtml = '';
+    if (isActive && days !== null) {
+      if (days < 0) {
+        urgencyHtml = `<div class="storage-warn urgent">⚠️ Storage expired — contact us</div>`;
+      } else if (days === 0) {
+        urgencyHtml = `<div class="storage-warn urgent">⚠️ Expires today</div>`;
+      } else if (days <= 5) {
+        urgencyHtml = `<div class="storage-warn ${days <= 2 ? 'urgent' : ''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
+      }
+    }
+
+    // Next action hint
+    let nextAction = '';
+    if (isActive && days !== null) {
+      if (isParcel && days <= 7) {
+        nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">
+          After expiry: daily storage fee, return, or discard
+        </div>`;
+      } else if (!isParcel && days !== null && days <= 3) {
+        nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">
+          After expiry: securely shredded
+        </div>`;
+      }
+    }
+
+    const confHtml = m.confidential === 'TRUE' || m.confidential === true
+      ? `<span class="pill confidential">Confidential</span>` : '';
+
+    // Group header for active vs done
+    return `
+      <div class="mail-item ${blurred ? 'blurred' : ''}" style="${isReleased ? 'opacity:0.65' : ''}">
+        <div class="mail-icon ${isParcel ? 'parcel' : 'letter'}">${icon}</div>
+        <div class="mail-info">
+          <div class="mail-recipient">${m.recipientName || 'Unknown'}</div>
+          <div class="mail-date">
+            ${fmtDateTime(m.loggedAt)}
+            ${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}
+          </div>
+          ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
+          ${urgencyHtml}
+          ${nextAction}
+        </div>
+        <div class="mail-meta">
+          <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
+          ${confHtml}
+        </div>
+      </div>`;
+  }).join('');
+
+  // Section dividers
+  const hasPending  = sorted.some(m => ['arrived','scanned','stored'].includes(m.status));
+  const hasComplete = sorted.some(m => ['picked_up','forwarded','shredded','discarded'].includes(m.status));
+
+  if (!statusFilter && hasPending && hasComplete) {
+    const pendingItems  = sorted.filter(m =>  ['arrived','scanned','stored'].includes(m.status));
+    const completeItems = sorted.filter(m => !['arrived','scanned','stored'].includes(m.status));
+    const buildItems = arr => arr.map(m => {
+      const isParcel  = m.type === 'parcel';
+      const icon      = isParcel ? '📦' : '✉️';
+      const days      = daysUntil(m.storageDueDate);
+      const isActive  = ['arrived','scanned','stored'].includes(m.status);
+      const isReleased= ['picked_up','forwarded','shredded','discarded'].includes(m.status);
+      let urgencyHtml = '';
+      if (isActive && days !== null) {
+        if (days < 0) urgencyHtml = `<div class="storage-warn urgent">⚠️ Storage expired</div>`;
+        else if (days === 0) urgencyHtml = `<div class="storage-warn urgent">⚠️ Expires today</div>`;
+        else if (days <= 5) urgencyHtml = `<div class="storage-warn ${days<=2?'urgent':''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
+      }
+      let nextAction = '';
+      if (isActive && days !== null) {
+        if (isParcel && days <= 7) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: daily fee, return, or discard</div>`;
+        else if (!isParcel && days <= 3) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: securely shredded</div>`;
+      }
+      const confHtml = m.confidential === 'TRUE' || m.confidential === true
+        ? `<span class="pill confidential">Confidential</span>` : '';
+      return `<div class="mail-item ${blurred?'blurred':''}" style="${isReleased?'opacity:0.65':''}">
+        <div class="mail-icon ${isParcel?'parcel':'letter'}">${icon}</div>
+        <div class="mail-info">
+          <div class="mail-recipient">${m.recipientName||'Unknown'}</div>
+          <div class="mail-date">${fmtDateTime(m.loggedAt)}${m.senderName?' · From: <strong>'+m.senderName+'</strong>':''}</div>
+          ${m.noteToClient?`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>`:''}
+          ${urgencyHtml}${nextAction}
+        </div>
+        <div class="mail-meta">
+          <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>${confHtml}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">
+        Awaiting Pickup (${pendingItems.length})
+      </div>
+      <div class="mail-list" style="margin-bottom:20px">${buildItems(pendingItems)}</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);margin-bottom:8px">
+        Completed (${completeItems.length})
+      </div>
+      <div class="mail-list">${buildItems(completeItems)}</div>`;
+  }
+
+  return `<div class="mail-list">${items}</div>`;
+}
+
+
+function renderPlansTab(sub, access) {
+  const dc   = qs('dashboard-content');
+  const pc   = STATE.planCard;
+  const recs = STATE.recipients || [];
+  const allSubs = STATE.allSubs || [sub];
+
+  // Build one card per subscription
+  const cardsHtml = allSubs.map((s, idx) => {
+    // For active sub use cached data, others just show header
+    const isActive = s.subscriptionId === sub.subscriptionId;
+    const thisPc   = isActive ? pc : null;
+    return buildPlanCard(s, thisPc, isActive ? recs : [], isActive);
+  }).join('');
+
+  dc.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:20px">
+      ${cardsHtml}
+      <div style="text-align:center;padding:12px;font-size:12px;color:var(--ink-4);border:1px dashed var(--border);border-radius:var(--radius)">
+        To cancel a plan, start a new subscription, or make other changes —
+        <strong style="color:var(--ink-3)">contact us via chat support</strong>.
+      </div>
+    </div>`;
+}
+
+function buildPlanCard(sub, pc, recipients, isLoaded) {
+  const label = k => `<div style="color:var(--ink-4);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${k}</div>`;
+  const val   = v => `<div style="font-size:13px;font-weight:500;color:var(--ink)">${v}</div>`;
+
+  // Status pill colour
+  const pillClass = {
+    ACTIVE:'scanned', CANCELED_WITH_ACCESS:'warning',
+    PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
+  }[sub.accessStatus] || 'stored';
+
+  // Billing cycle from sub
+  const billing = sub.interval === 'year' ? 'Annual' : 'Monthly';
+
+  // Period
+  const period = pc
+    ? (fmtDate(pc.currentPeriodStart) + ' – ' + fmtDate(pc.currentPeriodEnd))
+    : (sub.accessUntilDate ? '— – ' + fmtDate(sub.accessUntilDate) : '—');
+
+  // Location virtual office address — from planCard locationId resolved to Locations
+  // For now we show the configured address from planCard or fallback
+  const officeAddr = '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
+
+  // Usage
+  const mailLimit   = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
+  const parcelLimit = pc ? (parseInt(pc.parcelLimit) || 0) : 0;
+  const mailsUsed   = pc ? (parseInt(pc.mailsUsed)   || 0) : 0;
+  const parcelsUsed = pc ? (parseInt(pc.parcelsUsed) || 0) : 0;
+  const mailPct     = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
+  const parcelPct   = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
+  const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
+
+  // Forwarding
+  const hasFwd = pc && (pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true);
+  const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
+
+  // Recipients
+  const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const activeR  = recipients.filter(r => r.status === 'active').length;
+  const pendingR = recipients.filter(r => r.status !== 'active').length;
+  const canAddR  = activeR < maxR;
+
+  const recipientRows = recipients.length === 0
+    ? `<div style="font-size:12px;color:var(--ink-4);padding:10px 0">No mail recipients set up yet.</div>`
+    : recipients.map(r => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--ink-2);flex-shrink:0">${initials(r.name)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500;line-height:1.3">${r.name}</div>
+            <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName : r.type === 'company' ? 'Business' : 'Individual'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:10px">${r.status === 'active' ? 'Active' : r.status === 'pending' ? 'Pending' : r.status}</span>
+            ${r.status === 'active' ? '<span style="font-size:11px;color:var(--ink-4)">Contact reception to edit</span>' : ''}
+          </div>
+        </div>`).join('');
+
+  const addRecipientForm = isLoaded && canAddR ? `
+    <div style="margin-top:4px" id="add-rec-toggle-row-${sub.planCardId}">
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px"
+        onclick="toggleAddRecForm('${sub.planCardId}','${sub.planCardId}')">
+        + Add Name to Mailbox
+      </button>
+      <span style="font-size:11px;color:var(--ink-4);margin-left:8px">${activeR} of ${maxR} slots used</span>
+    </div>
+    <div id="add-rec-form-${sub.planCardId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:10px">Who should receive mail at this address?</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" id="nr-name-${sub.planCardId}" placeholder="e.g. Jane Smith or Acme Corp">
+        </div>
+        <div class="form-group">
+          <label>Also known as <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="nr-aka-${sub.planCardId}" placeholder="e.g. trading name, maiden name...">
+        </div>
+      </div>
+      <div class="form-group" style="max-width:240px">
+        <label>Type</label>
+        <select id="nr-type-${sub.planCardId}">
+          <option value="individual">Individual / Person</option>
+          <option value="company">Business / Company</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" id="nr-submit-${sub.planCardId}"
+          onclick="submitAddRecipient('${sub.planCardId}','${sub.planCardId}')">Submit</button>
+        <button class="btn btn-secondary btn-sm"
+          onclick="toggleAddRecForm('${sub.planCardId}','${sub.planCardId}')">Cancel</button>
+      </div>
+    </div>` : isLoaded && !canAddR ? `
+    <div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
+      All ${maxR} mailbox name slot${maxR > 1 ? 's' : ''} filled. Contact reception to make changes.
+    </div>` : '';
+
+  // Forwarding section
+  const fwdSection = hasFwd ? `
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">Forwarding Address</div>
+        <button class="btn btn-secondary btn-sm" id="fwd-edit-btn-${sub.planCardId}"
+          onclick="toggleFwdEdit('${sub.planCardId}','${sub.planCardId}')">Edit</button>
+      </div>
+      <div id="fwd-display-${sub.planCardId}" style="font-size:13px;color:var(--ink-2)">
+        ${fwdAddr || '<span style="color:var(--ink-4)">Not set</span>'}
+        ${pc && pc.forwardingInstructions ? `<div style="font-size:12px;color:var(--ink-4);margin-top:4px">${pc.forwardingInstructions}</div>` : ''}
+      </div>
+      <div id="fwd-form-${sub.planCardId}" style="display:none;margin-top:10px">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Street Address</label>
+            <input type="text" id="fwd-addr-${sub.planCardId}" value="${pc ? pc.forwardingAddress || '' : ''}" placeholder="123 Main St">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="fwd-city-${sub.planCardId}" value="${pc ? pc.forwardingCity || '' : ''}" placeholder="Toronto">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Province / State</label>
+            <input type="text" id="fwd-prov-${sub.planCardId}" value="${pc ? pc.forwardingProvince || '' : ''}" placeholder="ON">
+          </div>
+          <div class="form-group">
+            <label>Postal / ZIP</label>
+            <input type="text" id="fwd-postal-${sub.planCardId}" value="${pc ? pc.forwardingPostalCode || '' : ''}" placeholder="M5V 2H1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" id="fwd-country-${sub.planCardId}" value="${pc ? pc.forwardingCountry || 'Canada' : 'Canada'}" placeholder="Canada">
+        </div>
+        <div class="form-group">
+          <label>Special Instructions <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="fwd-instructions-${sub.planCardId}" value="${pc ? pc.forwardingInstructions || '' : ''}" placeholder="e.g. leave at door, signature required...">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-primary btn-sm" id="fwd-submit-${sub.planCardId}"
+            onclick="submitFwdUpdate('${sub.planCardId}','${sub.planCardId}')">Save Address</button>
+          <button class="btn btn-secondary btn-sm"
+            onclick="toggleFwdEdit('${sub.planCardId}','${sub.planCardId}')">Cancel</button>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+
+      <!-- Plan card header -->
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:2px">${sub.planName || '—'}</div>
+          <div style="font-size:12px;color:var(--ink-4)">${billing} · ${sub.planAmount ? '$' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
+        </div>
+        <span class="pill ${pillClass}" style="font-size:11px;white-space:nowrap;flex-shrink:0">${sub.accessStatus.replace(/_/g,' ')}</span>
+      </div>
+
+      <div style="padding:18px 20px">
+
+        <!-- Info grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+          <div>${label('Billing Period')}${val(period)}</div>
+          <div>${label('Billing Cycle')}${val(billing)}</div>
+          <div style="grid-column:1/-1">
+            ${label('Virtual Office Address')}
+            <div style="font-size:13px;font-weight:500;color:var(--ink)">${officeAddr}</div>
+            <div style="font-size:11px;color:var(--ink-4);margin-top:2px">This is your registered mailing address</div>
+          </div>
+        </div>
+
+        <!-- Usage -->
+        <div style="margin-bottom:20px;padding:14px;background:var(--bg);border-radius:var(--radius-sm)">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:10px">Usage This Period</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span>Mail</span><span style="color:var(--ink-3)">${mailsUsed} / ${mailLimit || '—'}</span>
+              </div>
+              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(mailPct)}" style="width:${mailPct}%"></div></div>
+            </div>
+            ${parcelLimit > 0 ? `
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span>Parcels</span><span style="color:var(--ink-3)">${parcelsUsed} / ${parcelLimit}</span>
+              </div>
+              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(parcelPct)}" style="width:${parcelPct}%"></div></div>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <!-- Recipients / Mailbox Names -->
+        <div>
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px">Mailbox Names</div>
+          <div style="font-size:11px;color:var(--ink-4);margin-bottom:10px">People or businesses authorized to receive mail at this address</div>
+          ${recipientRows}
+          ${addRecipientForm}
+        </div>
+
+        ${fwdSection}
+
+      </div>
+    </div>`;
+}
+
+// ── Toggle helpers for plan card forms ───────────────────
+function toggleAddRecForm(subId, planCardId) {
+  const key  = subId || planCardId;
+  const form = document.getElementById('add-rec-form-' + key);
+  const row  = document.getElementById('add-rec-toggle-row-' + key);
+  if (!form) return;
+  const open = form.style.display === 'none';
+  form.style.display = open ? 'block' : 'none';
+  const btn = row ? row.querySelector('button') : null;
+  if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Name to Mailbox';
+}
+
+function toggleFwdEdit(subId, planCardId) {
+  const key     = subId || planCardId;
+  const display = document.getElementById('fwd-display-' + key);
+  const form    = document.getElementById('fwd-form-' + key);
+  const btn     = document.getElementById('fwd-edit-btn-' + key);
+  if (!form) return;
+  const open = form.style.display === 'none';
+  if (display) display.style.display = open ? 'none' : 'block';
+  form.style.display = open ? 'block' : 'none';
+  if (btn) btn.textContent = open ? 'Cancel' : 'Edit';
+}
+
+async function submitAddRecipient(planCardId, key) {
+  const nameEl = document.getElementById('nr-name-' + key);
+  const name   = nameEl ? nameEl.value.trim() : '';
+  if (!name) { toast('Please enter a name', 'error'); return; }
+
+  const btn = document.getElementById('nr-submit-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+
+  try {
+    const akaEl  = document.getElementById('nr-aka-'  + key);
+    const typeEl = document.getElementById('nr-type-' + key);
+    const result = await apiPost({
+      action:          'addRecipient',
+      uuid:            STATE.uuid,
+      planCardId:      planCardId,
+      name:            name,
+      companyName:     akaEl  ? akaEl.value.trim()  : '',
+      type:            typeEl ? typeEl.value         : 'individual',
+      notifyOnArrival: true,
+      language:        'en'
+    });
+    if (result.status === 'ok') {
+      toast(name + ' added — staff will activate shortly', 'success');
+      STATE.recipients.push({
+        recipientId: result.recipientId || 'RCP_NEW_' + Date.now(),
+        planCardId, name,
+        companyName: akaEl ? akaEl.value.trim() : '',
+        type:        typeEl ? typeEl.value : 'individual',
+        status: 'pending'
+      });
+      renderPlansTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
+  }
+}
+
+
+async function submitFwdUpdate(planCardId, key) {
+  const btn = document.getElementById('fwd-submit-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  const g = id => {
+    const el = document.getElementById(id + key);
+    return el ? el.value.trim() : '';
+  };
+
+  try {
+    const result = await apiPost({
+      action:                'updateForwarding',
+      uuid:                  STATE.uuid,
+      planCardId:            planCardId,
+      forwardingAddress:     g('fwd-addr-'),
+      forwardingCity:        g('fwd-city-'),
+      forwardingProvince:    g('fwd-prov-'),
+      forwardingPostalCode:  g('fwd-postal-'),
+      forwardingCountry:     g('fwd-country-'),
+      forwardingInstructions: g('fwd-instructions-')
+    });
+    if (result.status === 'ok') {
+      toast('Forwarding address saved', 'success');
+      if (STATE.planCard) {
+        STATE.planCard.forwardingAddress      = g('fwd-addr-');
+        STATE.planCard.forwardingCity         = g('fwd-city-');
+        STATE.planCard.forwardingProvince     = g('fwd-prov-');
+        STATE.planCard.forwardingPostalCode   = g('fwd-postal-');
+        STATE.planCard.forwardingCountry      = g('fwd-country-');
+        STATE.planCard.forwardingInstructions = g('fwd-instructions-');
+      }
+      renderPlansTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Address'; }
+  }
+}
+
+
+// ── Refresh Mail Log ─────────────────────────────────────
+async function refreshMailLog() {
+  const btn = qs('refresh-btn');
+  if (btn) btn.textContent = '↻ Refreshing...';
+  const sub = STATE.activeSub;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
+    STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
+    const container = qs('mail-list-container');
+    const filter    = (qs('mail-filter') || {}).value || '';
+    if (container) {
+      container.innerHTML = renderMailList(STATE.mailLog, sub, filter);
+    } else {
+      renderMailTab(sub, STATE.access);
+    }
+    if (btn) btn.textContent = '↻ Refresh';
   } catch(e) {
     toast('Could not refresh', 'error');
     if (btn) btn.textContent = '↻ Refresh';
