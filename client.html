@@ -1233,7 +1233,14 @@ function applyMailFilter() {
 
 // ── Init ─────────────────────────────────────────────────
 function renderMailList(mailLog, sub, statusFilter) {
-  const blurred = !sub.canAccess;
+  const blurred   = !sub.canAccess;
+  // Merge plan card fields (forwardingEnabled, planType live on planCard, not subscription)
+  const pc        = STATE.planCard || {};
+  const planType  = (pc.planType || pc.planName || sub.planType || sub.planName || '').toLowerCase();
+  const hasScan   = planType.includes('scan');
+  const hasFwd    = pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true ||
+                    sub.forwardingEnabled === 'TRUE' || sub.forwardingEnabled === true;
+
   if (!mailLog.length) return `
     <div class="card">
       <div class="empty-state">
@@ -1243,18 +1250,16 @@ function renderMailList(mailLog, sub, statusFilter) {
       </div>
     </div>`;
 
-  // Sort: active first (arrived/scanned/stored), then forwarded, then picked_up/shredded last
-  const priority = s => (['arrived','scanned','stored'].includes(s) ? 0 : s === 'forwarded' ? 1 : s === 'picked_up' ? 3 : 2);
+  const priority = s => (['arrived','scanned','stored'].includes(s) ? 0 : s === 'forwarding_pending' ? 1 : s === 'forwarded' ? 2 : 3);
   let sorted = [...mailLog].sort((a,b) => {
     const pd = priority(a.status) - priority(b.status);
     if (pd !== 0) return pd;
     return new Date(b.loggedAt) - new Date(a.loggedAt);
   });
 
-  // Apply status filter
   if (statusFilter) {
     if (statusFilter === 'pending_pickup') {
-      sorted = sorted.filter(m => ['arrived','scanned','stored'].includes(m.status));
+      sorted = sorted.filter(m => ['arrived','scanned','stored','forwarding_pending'].includes(m.status));
     } else {
       sorted = sorted.filter(m => m.status === statusFilter);
     }
@@ -1265,46 +1270,90 @@ function renderMailList(mailLog, sub, statusFilter) {
       <div style="color:var(--ink-4);font-size:13px">No mail matches this filter.</div>
     </div>`;
 
-  const items = sorted.map(m => {
+  const buildItem = (m, isReleased) => {
     const isParcel   = m.type === 'parcel';
     const icon       = isParcel ? '📦' : '✉️';
     const days       = daysUntil(m.storageDueDate);
     const isActive   = ['arrived','scanned','stored'].includes(m.status);
-    const isReleased = ['picked_up','forwarded','shredded','discarded'].includes(m.status);
+    const isConf     = m.confidential === 'TRUE' || m.confidential === true;
+    const isFwdPend  = m.status === 'forwarding_pending';
+    const isForwarded = m.status === 'forwarded';
 
-    // Days until expiry banner
+    // — Scan URL (visible if plan has scanning and URL exists)
+    const scanHtml = hasScan && m.scanImageUrl
+      ? `<div style="margin-top:5px">
+          <a href="${m.scanImageUrl}" target="_blank"
+             style="font-size:12px;color:var(--blue);font-weight:500;text-decoration:none">
+            🔍 View Scan ↗
+          </a>
+        </div>` : '';
+
+    // — Confidential notice
+    const confNotice = isConf
+      ? `<div style="font-size:11px;background:#FFF8EC;color:#92600A;padding:4px 8px;border-radius:6px;margin-top:5px;font-weight:500">
+          🔒 Confidential — pickup only. No scan or forward.
+        </div>` : '';
+
+    // — Forwarding status
+    let fwdHtml = '';
+    if (!isConf && hasFwd && isActive) {
+      const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth()+1);
+      const monthName = nextMonth.toLocaleString('en-CA',{month:'long'});
+      fwdHtml = `<div style="font-size:11px;color:var(--blue);margin-top:4px">
+        📬 Will be forwarded — first week of ${monthName}
+      </div>`;
+    }
+    if (isFwdPend) {
+      fwdHtml = `<div style="font-size:11px;color:var(--blue);font-weight:500;margin-top:4px">
+        📬 Forwarding in progress…
+      </div>`;
+    }
+    if (isForwarded && m.trackingLink) {
+      fwdHtml = `<div style="margin-top:5px">
+        <a href="${m.trackingLink}" target="_blank"
+           style="font-size:12px;color:var(--green);font-weight:500;text-decoration:none">
+          📦 Track your shipment ↗
+        </a>
+      </div>`;
+    } else if (isForwarded) {
+      fwdHtml = `<div style="font-size:11px;color:var(--green);margin-top:4px">✓ Forwarded</div>`;
+    }
+
+    // — Storage countdown (only show if item will actually be shredded)
+    // Forwarding plans don't shred; scan plans do; pickup plans do
+    const willShred = !hasFwd || isConf;
     let urgencyHtml = '';
-    if (isActive && days !== null) {
+    let nextAction  = '';
+    if (isActive && days !== null && willShred) {
       if (days < 0) {
         urgencyHtml = `<div class="storage-warn urgent">⚠️ Storage expired — contact us</div>`;
       } else if (days === 0) {
         urgencyHtml = `<div class="storage-warn urgent">⚠️ Expires today</div>`;
       } else if (days <= 5) {
-        urgencyHtml = `<div class="storage-warn ${days <= 2 ? 'urgent' : ''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
-      }
-    }
-
-    // Next action hint
-    let nextAction = '';
-    if (isActive && days !== null) {
-      if (isParcel && days <= 7) {
-        nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">
-          After expiry: daily storage fee, return, or discard
-        </div>`;
-      } else if (!isParcel && days !== null && days <= 3) {
-        nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">
-          After expiry: securely shredded
+        urgencyHtml = `<div class="storage-warn ${days<=2?'urgent':''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
+      } else {
+        urgencyHtml = `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">
+          Storage until ${fmtDate(m.storageDueDate)} (${days}d)
         </div>`;
       }
+      if (isParcel && days <= 7) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: daily storage fee, return, or discard</div>`;
+      else if (!isParcel && days <= 3) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: securely shredded</div>`;
+    } else if (isActive && hasFwd && !isConf && days !== null) {
+      // Forwarding plan — show storage date as reference but no shred warning
+      urgencyHtml = `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">
+        Stored until ${fmtDate(m.storageDueDate)}
+      </div>`;
     }
 
-    const confHtml = m.confidential === 'TRUE' || m.confidential === true
-      ? `<span class="pill confidential">Confidential</span>` : '';
+    const statusLabel = {
+      arrived:'Arrived', scanned:'Scanned', stored:'Stored',
+      forwarding_pending:'Forwarding Soon', forwarded:'Forwarded',
+      picked_up:'Picked Up', shredded:'Shredded', discarded:'Discarded'
+    }[m.status] || m.status.replace(/_/g,' ');
 
-    // Group header for active vs done
     return `
-      <div class="mail-item ${blurred ? 'blurred' : ''}" style="${isReleased ? 'opacity:0.65' : ''}">
-        <div class="mail-icon ${isParcel ? 'parcel' : 'letter'}">${icon}</div>
+      <div class="mail-item ${blurred?'blurred':''}" style="${isReleased?'opacity:0.65':''}">
+        <div class="mail-icon ${isParcel?'parcel':'letter'}">${icon}</div>
         <div class="mail-info">
           <div class="mail-recipient">${m.recipientName || 'Unknown'}</div>
           <div class="mail-date">
@@ -1312,68 +1361,39 @@ function renderMailList(mailLog, sub, statusFilter) {
             ${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}
           </div>
           ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
+          ${confNotice}
+          ${scanHtml}
+          ${fwdHtml}
           ${urgencyHtml}
           ${nextAction}
         </div>
         <div class="mail-meta">
-          <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
-          ${confHtml}
+          <span class="pill ${m.status}">${statusLabel}</span>
         </div>
       </div>`;
-  }).join('');
+  };
 
-  // Section dividers
-  const hasPending  = sorted.some(m => ['arrived','scanned','stored'].includes(m.status));
-  const hasComplete = sorted.some(m => ['picked_up','forwarded','shredded','discarded'].includes(m.status));
+  const isActive   = m => ['arrived','scanned','stored','forwarding_pending'].includes(m.status);
+  const isComplete = m => !isActive(m);
+
+  const hasPending  = sorted.some(isActive);
+  const hasComplete = sorted.some(isComplete);
 
   if (!statusFilter && hasPending && hasComplete) {
-    const pendingItems  = sorted.filter(m =>  ['arrived','scanned','stored'].includes(m.status));
-    const completeItems = sorted.filter(m => !['arrived','scanned','stored'].includes(m.status));
-    const buildItems = arr => arr.map(m => {
-      const isParcel  = m.type === 'parcel';
-      const icon      = isParcel ? '📦' : '✉️';
-      const days      = daysUntil(m.storageDueDate);
-      const isActive  = ['arrived','scanned','stored'].includes(m.status);
-      const isReleased= ['picked_up','forwarded','shredded','discarded'].includes(m.status);
-      let urgencyHtml = '';
-      if (isActive && days !== null) {
-        if (days < 0) urgencyHtml = `<div class="storage-warn urgent">⚠️ Storage expired</div>`;
-        else if (days === 0) urgencyHtml = `<div class="storage-warn urgent">⚠️ Expires today</div>`;
-        else if (days <= 5) urgencyHtml = `<div class="storage-warn ${days<=2?'urgent':''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
-      }
-      let nextAction = '';
-      if (isActive && days !== null) {
-        if (isParcel && days <= 7) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: daily fee, return, or discard</div>`;
-        else if (!isParcel && days <= 3) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: securely shredded</div>`;
-      }
-      const confHtml = m.confidential === 'TRUE' || m.confidential === true
-        ? `<span class="pill confidential">Confidential</span>` : '';
-      return `<div class="mail-item ${blurred?'blurred':''}" style="${isReleased?'opacity:0.65':''}">
-        <div class="mail-icon ${isParcel?'parcel':'letter'}">${icon}</div>
-        <div class="mail-info">
-          <div class="mail-recipient">${m.recipientName||'Unknown'}</div>
-          <div class="mail-date">${fmtDateTime(m.loggedAt)}${m.senderName?' · From: <strong>'+m.senderName+'</strong>':''}</div>
-          ${m.noteToClient?`<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>`:''}
-          ${urgencyHtml}${nextAction}
-        </div>
-        <div class="mail-meta">
-          <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>${confHtml}
-        </div>
-      </div>`;
-    }).join('');
-
+    const pending  = sorted.filter(isActive);
+    const complete = sorted.filter(isComplete);
     return `
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">
-        Awaiting Pickup (${pendingItems.length})
+        Awaiting (${pending.length})
       </div>
-      <div class="mail-list" style="margin-bottom:20px">${buildItems(pendingItems)}</div>
+      <div class="mail-list" style="margin-bottom:20px">${pending.map(m=>buildItem(m,false)).join('')}</div>
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);margin-bottom:8px">
-        Completed (${completeItems.length})
+        Completed (${complete.length})
       </div>
-      <div class="mail-list">${buildItems(completeItems)}</div>`;
+      <div class="mail-list">${complete.map(m=>buildItem(m,true)).join('')}</div>`;
   }
 
-  return `<div class="mail-list">${items}</div>`;
+  return `<div class="mail-list">${sorted.map(m=>buildItem(m,isComplete(m))).join('')}</div>`;
 }
 
 
