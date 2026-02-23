@@ -532,6 +532,7 @@ let STATE = {
   mailLog:      [],
   planCard:     null,
   recipients:   [],
+  agents:       [],
   activeTab:    'mail',
   loading:      false
 };
@@ -1033,6 +1034,7 @@ async function renderDashboard(sub, access) {
         <div class="tab active" onclick="switchTab('mail')"  id="tab-mail">Mail Log</div>
         <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plan</div>
         <div class="tab"        onclick="switchTab('recipients')" id="tab-recipients">Recipients</div>
+        <div class="tab"        onclick="switchTab('agents')" id="tab-agents">Pickup Agents</div>
       </div>
     </div>
     <div class="main" id="dashboard-content">
@@ -1043,15 +1045,17 @@ async function renderDashboard(sub, access) {
     </div>`;
 
   // All 3 fetches fire simultaneously
-  const [mailData, planData, recipientData] = await Promise.allSettled([
+  const [mailData, planData, recipientData, agentData] = await Promise.allSettled([
     api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`),
     sub.planCardId ? api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`) : Promise.resolve(null),
-    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`) : Promise.resolve(null)
+    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`) : Promise.resolve(null),
+    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getAgents&planCardId=${sub.planCardId}`) : Promise.resolve(null)
   ]);
 
   STATE.mailLog    = mailData.status === 'fulfilled' ? ((mailData.value.mailLog || []).filter(m => m.mailId)) : [];
   STATE.planCard   = planData.status === 'fulfilled' && planData.value ? planData.value.planCard : null;
   STATE.recipients = recipientData.status === 'fulfilled' && recipientData.value ? (recipientData.value.recipients || []) : [];
+  STATE.agents     = agentData.status === 'fulfilled' && agentData.value ? (agentData.value.agents || []) : [];
 
   renderMailTab(sub, access);
 }
@@ -1067,6 +1071,7 @@ function switchTab(tab) {
   if (tab === 'mail')       renderMailTab(sub, access);
   if (tab === 'plan')       renderPlanTab(sub, access);
   if (tab === 'recipients') renderRecipientsTab(sub, access);
+  if (tab === 'agents')     renderAgentsTab(sub, access);
 }
 
 function renderMailTab(sub, access) {
@@ -1287,6 +1292,152 @@ function renderRecipientsTab(sub, access) {
       <div class="empty-title">Could not load recipients</div>
       <div class="empty-sub">${err.message}</div>
     </div>`;
+  }
+}
+
+// ── Agents Tab ───────────────────────────────────────────
+function renderAgentsTab(sub, access) {
+  const dc      = qs('dashboard-content');
+  const agents  = STATE.agents || [];
+  const active  = agents.filter(a => a.status === 'active');
+  const MAX     = 3;
+  const canAdd  = active.length < MAX;
+
+  const agentCards = active.length === 0
+    ? `<div class="empty-state" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:40px">
+        <div class="empty-icon">🚶</div>
+        <div class="empty-title">No pickup agents yet</div>
+        <div class="empty-sub">Add up to 3 people who are authorized to pick up your mail.</div>
+      </div>`
+    : active.map(a => `
+        <div class="recipient-item" style="align-items:flex-start">
+          <div class="recipient-avatar" style="background:#E8F5EE;color:var(--green)">${initials(a.name)}</div>
+          <div class="recipient-info" style="flex:1">
+            <div class="recipient-name">${a.name}</div>
+            <div class="recipient-company">
+              ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : 'No ID on file'}
+              ${a.phone ? ' · ' + a.phone : ''}
+            </div>
+            ${a.notes ? `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">${a.notes}</div>` : ''}
+          </div>
+          <button class="btn btn-secondary btn-sm"
+            onclick="confirmDeactivateAgent('${a.agentId}','${a.name.replace(/'/g,"\'")}')">
+            Remove
+          </button>
+        </div>`).join('');
+
+  const addFormHtml = canAdd ? `
+    <div class="card" style="padding:20px;margin-top:16px" id="add-agent-card">
+      <div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:14px">
+        Add Pickup Agent <span style="font-size:11px;font-weight:400;color:var(--ink-4)">(${active.length}/${MAX} used)</span>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" id="ag-name" placeholder="Jane Smith" required>
+        </div>
+        <div class="form-group">
+          <label>Phone <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="ag-phone" placeholder="416-555-0123">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>ID Type <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <select id="ag-idtype">
+            <option value="">Not provided</option>
+            <option value="Driver's License">Driver's License</option>
+            <option value="Passport">Passport</option>
+            <option value="Health Card">Health Card</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Last 4 of ID <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="ag-idlast4" placeholder="e.g. 4821" maxlength="4">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes <span style="color:var(--ink-4);text-transform:none">(optional — visible to staff)</span></label>
+        <input type="text" id="ag-notes" placeholder="e.g. Business partner, will call ahead...">
+      </div>
+      <button class="btn btn-primary" id="ag-submit-btn" onclick="submitAddAgent('${sub.planCardId}')">
+        Add Agent
+      </button>
+    </div>` : `
+    <div style="background:var(--amber-bg);border-radius:var(--radius);padding:12px 16px;margin-top:16px;font-size:13px;color:var(--amber)">
+      ⚠️ Maximum of ${MAX} active agents reached. Remove an agent to add a new one.
+    </div>`;
+
+  dc.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0">
+      <div class="section-header" style="margin-bottom:12px">
+        <div class="section-title">Pickup Agents</div>
+        <div style="font-size:12px;color:var(--ink-4)">${active.length} of ${MAX} active</div>
+      </div>
+      <div class="recipient-list">${agentCards}</div>
+      ${addFormHtml}
+    </div>`;
+}
+
+async function submitAddAgent(planCardId) {
+  const btn  = qs('ag-submit-btn');
+  const name = (qs('ag-name') ? qs('ag-name').value.trim() : '');
+  if (!name) { toast('Name is required', 'error'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner"></span> Adding...';
+
+  try {
+    const result = await apiPost({
+      action:    'addAgent',
+      uuid:      STATE.uuid,
+      planCardId: planCardId,
+      name:      name,
+      phone:     qs('ag-phone') ? qs('ag-phone').value.trim() : '',
+      idType:    qs('ag-idtype') ? qs('ag-idtype').value : '',
+      idLast4:   qs('ag-idlast4') ? qs('ag-idlast4').value.trim() : '',
+      notes:     qs('ag-notes') ? qs('ag-notes').value.trim() : ''
+    });
+
+    if (result.status === 'ok') {
+      toast(name + ' added as pickup agent', 'success');
+      // Refresh agents cache
+      if (STATE.activeSub && STATE.activeSub.planCardId) {
+        const fresh = await api(`uuid=${STATE.uuid}&action=getAgents&planCardId=${STATE.activeSub.planCardId}`);
+        STATE.agents = fresh.agents || [];
+      }
+      renderAgentsTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed to add agent');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Add Agent'; }
+  }
+}
+
+function confirmDeactivateAgent(agentId, name) {
+  if (!confirm(`Remove ${name} as a pickup agent? They will no longer be authorized to collect mail.`)) return;
+  deactivateAgent(agentId, name);
+}
+
+async function deactivateAgent(agentId, name) {
+  try {
+    const result = await apiPost({
+      action:  'deactivateAgent',
+      uuid:    STATE.uuid,
+      agentId: agentId
+    });
+    if (result.status === 'ok') {
+      toast(name + ' removed', 'success');
+      STATE.agents = STATE.agents.filter(a => a.agentId !== agentId);
+      renderAgentsTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
   }
 }
 
