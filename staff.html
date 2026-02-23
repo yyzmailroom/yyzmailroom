@@ -472,6 +472,7 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbyBryhTn4ajucQTDfwlLwMPz2EPirt0WjO5BD9EcnTiT2plXl4DdCiHyJOoQs1xK20Njg/exec?';
 
 let STATE = {
+  recipientsCache: null,
   uuid:         null,
   access:       null,
   tasks:        [],
@@ -609,7 +610,7 @@ function showBlocked(msg) {
     </div>`;
 }
 
-async function loadTasks() {
+async async function loadTasks() {
   try {
     const data = await api(`uuid=${STATE.uuid}&action=getTasks`);
     STATE.tasks = data.tasks || [];
@@ -818,7 +819,7 @@ function renderTasksFull() {
     <div style="max-width:800px; margin:0 auto">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px">
         <div style="font-family:'DM Serif Display',serif; font-size:20px">${open.length} Open Tasks</div>
-        <button class="btn btn-secondary btn-sm" onclick="loadTasks().then(renderWorkspace)">↻ Refresh</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadTasks().then(() => renderWorkspace())">↻ Refresh</button>
       </div>
       ${open.length === 0 ? `
         <div class="empty-pane" style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); min-height:200px">
@@ -857,27 +858,32 @@ function renderLogForm(container) {
       <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
 
         <div class="form-divider">Recipient</div>
-        <div class="form-group recipient-search-wrap">
-          <label>Search Recipient</label>
-          <input type="text" id="log-recipient-search" placeholder="Type name or company..." autocomplete="off"
-            oninput="searchRecipients(this.value)">
-          <div class="recipient-results" id="recipient-results" style="display:none"></div>
+        <div id="recipient-section">
+          <div class="form-group recipient-search-wrap">
+            <label>Search Recipient</label>
+            <input type="text" id="log-recipient-search" placeholder="Type name or company..." autocomplete="off"
+              oninput="searchRecipients(this.value)">
+            <div class="recipient-results" id="recipient-results" style="display:none"></div>
+          </div>
+          <div id="selected-recipient-box" style="display:none; background:var(--bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:13px">
+            <div style="font-weight:500" id="sel-rec-name"></div>
+            <div style="font-size:11px; color:var(--ink-4)" id="sel-rec-sub"></div>
+            <button style="font-size:11px; color:var(--red); background:none; margin-top:4px" onclick="clearRecipient()">✕ Clear</button>
+          </div>
         </div>
-        <div id="selected-recipient-box" style="display:none; background:var(--bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:13px; display:none">
-          <div style="font-weight:500" id="sel-rec-name"></div>
-          <div style="font-size:11px; color:var(--ink-4)" id="sel-rec-sub"></div>
-          <button style="font-size:11px; color:var(--red); background:none; margin-top:4px" onclick="clearRecipient()">✕ Clear</button>
+        <div id="special-case-note" style="display:none; background:var(--amber-bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:12px; color:var(--amber)">
+          ⚠️ Special case — no recipient required. Item stored for future assignment or disposal.
         </div>
 
         <div class="form-divider">Mail Details</div>
         <div class="form-group">
-          <label>Sender Name <span style="color:var(--ink-4);text-transform:none">(shown to client — who is this from?)</span></label>
+          <label>Sender Name <span style="color:var(--ink-4);text-transform:none">(shown to client)</span></label>
           <input type="text" id="log-sender" placeholder="e.g. TD Bank, CRA, Amazon, John Smith...">
         </div>
         <div class="form-row">
           <div class="form-group">
             <label>Type</label>
-            <select id="log-type">
+            <select id="log-type" onchange="onMailTypeChange()">
               <option value="letter">Letter / Envelope</option>
               <option value="parcel">Parcel / Package</option>
             </select>
@@ -894,7 +900,7 @@ function renderLogForm(container) {
             <input type="text" id="log-pieces" value="1">
           </div>
           <div class="form-group">
-            <label>Scan Image URL <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+            <label>Scan Image URL <span style="color:var(--ink-4);text-transform:normal;font-weight:400" id="scan-url-hint">(optional)</span></label>
             <input type="text" id="log-scan" placeholder="https://drive.google.com/...">
           </div>
         </div>
@@ -910,15 +916,15 @@ function renderLogForm(container) {
 
         <div class="toggle-row" style="margin-bottom:14px">
           <span class="toggle-label">Confidential <span style="font-size:11px; color:var(--ink-4)">(blocks scan & forward)</span></span>
-          <div class="toggle" id="tog-confidential" onclick="this.classList.toggle('on')"></div>
+          <div class="toggle" id="tog-confidential" onclick="onConfidentialToggle()"></div>
         </div>
         <div class="toggle-row" style="margin-bottom:14px">
-          <span class="toggle-label">Special Case</span>
-          <div class="toggle" id="tog-special" onclick="toggleSpecial()"></div>
+          <span class="toggle-label">Special Case <span style="font-size:11px; color:var(--ink-4)">(no recipient needed)</span></span>
+          <div class="toggle" id="tog-special" onclick="onSpecialCaseToggle()"></div>
         </div>
 
         <div id="special-case-reason-wrap" style="display:none" class="form-group">
-          <label>Special Case Reason</label>
+          <label>Special Case Reason *</label>
           <input type="text" id="log-special-reason" placeholder="Explain the special case...">
         </div>
 
@@ -946,12 +952,45 @@ function renderLogForm(container) {
       </div>
     </div>`;
 
-  // Show parcel fields when type = parcel
-  qs('log-type').addEventListener('change', function() {
-    const pf = qs('parcel-fields');
-    if (pf) pf.style.display = this.value === 'parcel' ? 'block' : 'none';
-  });
+  qs('log-type').addEventListener('change', onMailTypeChange);
 }
+
+function onConfidentialToggle() {
+  qs('tog-confidential').classList.toggle('on');
+  updateScanUrlRequirement();
+}
+
+function onSpecialCaseToggle() {
+  const tog = qs('tog-special');
+  tog.classList.toggle('on');
+  const isSpecial = tog.classList.contains('on');
+  const recSection  = qs('recipient-section');
+  const specialNote = qs('special-case-note');
+  const reasonWrap  = qs('special-case-reason-wrap');
+  if (recSection)  recSection.style.display  = isSpecial ? 'none' : 'block';
+  if (specialNote) specialNote.style.display = isSpecial ? 'block' : 'none';
+  if (reasonWrap)  reasonWrap.style.display  = isSpecial ? 'block' : 'none';
+}
+
+function onMailTypeChange() {
+  const pf = qs('parcel-fields');
+  if (pf) pf.style.display = qs('log-type') && qs('log-type').value === 'parcel' ? 'block' : 'none';
+  updateScanUrlRequirement();
+}
+
+function updateScanUrlRequirement() {
+  const pc           = STATE.logPlanCard;
+  const isScanPlan   = pc && pc.planType && pc.planType.toLowerCase().includes('scan');
+  const isConf       = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
+  const isLetter     = qs('log-type') && qs('log-type').value !== 'parcel';
+  const mandatory    = isScanPlan && isLetter && !isConf;
+  const hint = qs('scan-url-hint');
+  if (hint) {
+    hint.textContent = mandatory ? '(required for scan plan)' : '(optional)';
+    hint.style.color = mandatory ? 'var(--red)' : 'var(--ink-4)';
+  }
+}
+
 
 function toggleSpecial() {
   const tog = qs('tog-special');
@@ -963,56 +1002,71 @@ function toggleSpecial() {
 // ── Recipient search ──────────────────────────────────────
 let _searchTimeout = null;
 
-async function searchRecipients(query) {
+async // Recipient cache — loaded once per session, filtered client-side
+let _recipientCache = null;
+let _recipientCacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function warmRecipientCache() {
+  const now = Date.now();
+  if (_recipientCache && (now - _recipientCacheTime) < CACHE_TTL) return;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=searchRecipients&q=`);
+    _recipientCache = data.recipients || [];
+    _recipientCacheTime = now;
+  } catch(e) { _recipientCache = _recipientCache || []; }
+}
+
+function searchRecipients(query) {
   clearTimeout(_searchTimeout);
   const results = qs('recipient-results');
   if (!results) return;
+  if (!query || query.length < 1) { results.style.display = 'none'; return; }
 
-  if (!query || query.length < 2) {
-    results.style.display = 'none';
+  if (_recipientCache) {
+    showRecipientResults(query, results);
     return;
   }
-
-  // Show loading state immediately
   results.style.display = 'block';
-  results.innerHTML = `<div class="recipient-result-item" style="color:var(--ink-4)">Searching...</div>`;
-
+  results.innerHTML = `<div class="recipient-result-item" style="color:var(--ink-4)">Loading...</div>`;
   _searchTimeout = setTimeout(async () => {
-    try {
-      const data = await api(`uuid=${STATE.uuid}&action=searchRecipients&q=${encodeURIComponent(query)}`);
-      const recipients = data.recipients || [];
-
-      if (!results) return; // user may have cleared the field
-
-      if (recipients.length === 0) {
-        results.innerHTML = `<div class="recipient-result-item" style="color:var(--ink-4)">No matching recipients found</div>`;
-        return;
-      }
-
-      results.innerHTML = recipients.map(r => {
-        const payload = JSON.stringify({
-          recipientId:    r.recipientId,
-          name:           r.name,
-          companyName:    r.companyName,
-          planCardId:     r.planCardId,
-          clientId:       r.clientId,
-          subscriptionId: r.subscriptionId
-        }).replace(/"/g, '&quot;');
-        return `
-          <div class="recipient-result-item" onclick="selectRecipient(${payload})">
-            <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}</div>
-            <div class="rri-sub">${r.planName || r.planCardId} · ${r.accessStatus || ''}</div>
-          </div>`;
-      }).join('');
-
-    } catch(e) {
-      if (results) results.style.display = 'none';
-    }
-  }, 280);
+    await warmRecipientCache();
+    showRecipientResults(query, results);
+  }, 80);
 }
+
+function showRecipientResults(query, results) {
+  if (!results) return;
+  const q    = query.toLowerCase();
+  const hits = (_recipientCache || []).filter(r =>
+    [r.name, r.companyName, r.planCardId, r.planName]
+      .join(' ').toLowerCase().includes(q)
+  ).slice(0, 8);
+
+  if (!hits.length) {
+    results.style.display = 'block';
+    results.innerHTML = `<div class="recipient-result-item" style="color:var(--ink-4)">No matching recipients</div>`;
+    return;
+  }
+  results.style.display = 'block';
+  results.innerHTML = hits.map(r => {
+    const payload = JSON.stringify({
+      recipientId: r.recipientId, name: r.name, companyName: r.companyName,
+      planCardId: r.planCardId, clientId: r.clientId,
+      subscriptionId: r.subscriptionId, accessStatus: r.accessStatus
+    }).replace(/"/g, '&quot;');
+    const dot = r.accessStatus === 'ACTIVE' ? '🟢' : '🔴';
+    return `<div class="recipient-result-item" onclick="selectRecipient(${payload})">
+      <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}</div>
+      <div class="rri-sub">${dot} ${r.planName || r.planCardId}</div>
+    </div>`;
+  }).join('');
+}
+
 
 function selectRecipient(data) {
   STATE.logPlanCard = data;
+  updateScanUrlRequirement();
   const results = qs('recipient-results');
   if (results) results.style.display = 'none';
 
@@ -1022,10 +1076,37 @@ function selectRecipient(data) {
   const box = qs('selected-recipient-box');
   if (box) {
     box.style.display = 'block';
-    qs('sel-rec-name').textContent = data.name + (data.companyName ? ' — ' + data.companyName : '');
-    qs('sel-rec-sub').textContent  = 'Plan: ' + data.planCardId + ' · Client: ' + (data.clientId || '').slice(0, 12) + '...';
+    const nameEl  = qs('sel-rec-name');
+    const subEl   = qs('sel-rec-sub');
+    if (nameEl) nameEl.textContent = data.name + (data.companyName ? ' — ' + data.companyName : '');
+    if (subEl)  subEl.textContent  = (data.planName || data.planCardId) + ' · ' + (data.clientId || '').slice(0,12) + '...';
+
+    // Payment status warning
+    const isBlocked = data.accessStatus && data.accessStatus !== 'ACTIVE' && data.accessStatus !== 'CANCELED_WITH_ACCESS';
+    let statusHtml = '';
+    if (isBlocked) {
+      statusHtml = `<div style="margin-top:6px;padding:6px 10px;background:var(--red-dim);border-radius:var(--radius-sm);font-size:11px;color:var(--red);font-weight:500">
+        ⛔ ${data.accessStatus.replace(/_/g,' ')} — mail release blocked. Do not release items.
+      </div>`;
+    } else if (data.accessStatus === 'CANCELED_WITH_ACCESS') {
+      statusHtml = `<div style="margin-top:6px;padding:6px 10px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:11px;color:var(--amber)">
+        ⚠️ Subscription canceling — still has access until period ends.
+      </div>`;
+    }
+
+    // Remove any old status div
+    const old = box.querySelector('.recipient-status-warn');
+    if (old) old.remove();
+    if (statusHtml) {
+      const div = document.createElement('div');
+      div.className = 'recipient-status-warn';
+      div.innerHTML = statusHtml;
+      box.appendChild(div);
+    }
   }
+  updateScanUrlRequirement();
 }
+
 
 function clearRecipient() {
   STATE.logPlanCard = null;
@@ -1040,56 +1121,65 @@ function clearRecipient() {
 // ── Submit log mail ───────────────────────────────────────
 async function submitLogMail() {
   if (STATE.submitting) return;
-  const btn = qs('log-submit-btn');
+  const btn       = qs('log-submit-btn');
+  const isSpecial = qs('tog-special') && qs('tog-special').classList.contains('on');
+  const pc        = STATE.logPlanCard;
 
-  const pc = STATE.logPlanCard;
-  if (!pc) { toast('Please select a recipient first', 'error'); return; }
+  if (!pc && !isSpecial) { toast('Please select a recipient first', 'error'); return; }
+  if (isSpecial) {
+    const reason = qs('log-special-reason') ? qs('log-special-reason').value.trim() : '';
+    if (!reason) { toast('Please enter a special case reason', 'error'); return; }
+  }
+
+  const isConfidential = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
+  const type           = qs('log-type') ? qs('log-type').value : 'letter';
+  const isScanPlan     = pc && pc.planType && pc.planType.toLowerCase().includes('scan');
+  const scanMandatory  = isScanPlan && type === 'letter' && !isConfidential && !isSpecial;
+  const scanUrl        = qs('log-scan') ? qs('log-scan').value.trim() : '';
+  if (scanMandatory && !scanUrl) {
+    toast('Scan image URL is required for scan plans', 'error');
+    if (qs('log-scan')) qs('log-scan').focus();
+    return;
+  }
+
+  const isOversized = qs('tog-oversized') ? qs('tog-oversized').classList.contains('on') : false;
 
   STATE.submitting = true;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="btn-spinner"></span> Logging...';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Logging...'; }
 
   try {
-    const isConfidential = qs('tog-confidential').classList.contains('on');
-    const isSpecial      = qs('tog-special').classList.contains('on');
-    const isOversized    = qs('tog-oversized') ? qs('tog-oversized').classList.contains('on') : false;
-    const type           = qs('log-type').value;
-
     const result = await apiPost({
-      action:           'logMail',
-      uuid:             STATE.uuid,
-      planCardId:       pc.planCardId,
-      clientId:         pc.clientId,
-      subscriptionId:   pc.subscriptionId,
-      locationId:       STATE.access.locationId,
-      recipientId:      pc.recipientId || '',
-      recipientName:    pc.name || qs('log-recipient-search').value,
-      senderName:       (qs('log-sender') ? qs('log-sender').value.trim() : ''),
-      type:             type,
-      confidential:     isConfidential,
-      specialCase:      isSpecial,
-      specialCaseReason: isSpecial ? (qs('log-special-reason').value || '') : '',
-      physicalLocation: qs('log-location').value,
-      scanImageUrl:     qs('log-scan').value,
-      noteToClient:     qs('log-note-client').value,
-      noteInternal:     qs('log-note-internal').value,
-      pieceCount:       parseInt(qs('log-pieces').value) || 1,
-      estimatedWeight:  type === 'parcel' ? (qs('log-weight')?.value || '') : '',
-      returnAddress:    type === 'parcel' ? (qs('log-return-addr')?.value || '') : '',
-      oversizedPickup:  isOversized
+      action:            'logMail',
+      uuid:              STATE.uuid,
+      planCardId:        isSpecial ? '' : (pc ? pc.planCardId     : ''),
+      clientId:          isSpecial ? '' : (pc ? pc.clientId       : ''),
+      subscriptionId:    isSpecial ? '' : (pc ? pc.subscriptionId : ''),
+      locationId:        STATE.access.locationId,
+      recipientId:       isSpecial ? '' : (pc ? pc.recipientId || '' : ''),
+      recipientName:     isSpecial ? 'SPECIAL CASE' : (pc ? pc.name || '' : ''),
+      senderName:        qs('log-sender')        ? qs('log-sender').value.trim()        : '',
+      type:              type,
+      confidential:      isConfidential,
+      specialCase:       isSpecial,
+      specialCaseReason: isSpecial ? (qs('log-special-reason') ? qs('log-special-reason').value : '') : '',
+      physicalLocation:  qs('log-location')      ? qs('log-location').value.trim()      : '',
+      scanImageUrl:      scanUrl,
+      noteToClient:      qs('log-note-client')   ? qs('log-note-client').value          : '',
+      noteInternal:      qs('log-note-internal') ? qs('log-note-internal').value        : '',
+      pieceCount:        parseInt(qs('log-pieces') ? qs('log-pieces').value : '1') || 1,
+      estimatedWeight:   type === 'parcel' && qs('log-weight')      ? qs('log-weight').value      : '',
+      returnAddress:     type === 'parcel' && qs('log-return-addr') ? qs('log-return-addr').value : '',
+      oversizedPickup:   isOversized
     });
 
     if (result.status === 'ok') {
       toast('Mail logged: ' + result.mailId, 'success');
-      // Reset form
       renderLogForm(qs('log-full') || qs('workspace'));
       STATE.logPlanCard = null;
-      // Refresh tasks
       await loadTasks();
     } else {
       throw new Error(result.message || 'Logging failed');
     }
-
   } catch(err) {
     toast(err.message, 'error');
   } finally {
@@ -1097,6 +1187,7 @@ async function submitLogMail() {
     if (btn) { btn.disabled = false; btn.innerHTML = 'Log Mail'; }
   }
 }
+
 
 // ── Resolve task ──────────────────────────────────────────
 async function resolveTask(taskId) {
@@ -1244,7 +1335,7 @@ function renderStaffMailList(mailLog) {
             </div>
             <div>
               ${canRelease
-                ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${m.mailId}','${(m.recipientName||'').replace(/'/g,"\'")}','${m.planCardId}')">Release</button>`
+                ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${m.mailId}','${(m.recipientName||'').replace(/'/g,"\'")}','${m.planCardId}','${m.accessStatus||\"\"}')">Release</button>`
                 : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
             </div>
           </div>`;
@@ -1253,10 +1344,28 @@ function renderStaffMailList(mailLog) {
 }
 
 // ── Release Modal ─────────────────────────────────────────
-async function openReleaseModal(mailId, recipientName, planCardId) {
-  // Remove any existing modal
+async function openReleaseModal(mailId, recipientName, planCardId, accessStatus) {
   const existing = qs('release-modal');
   if (existing) existing.remove();
+
+  // Block if payment issue
+  if (accessStatus && !['ACTIVE','CANCELED_WITH_ACCESS'].includes(accessStatus)) {
+    const modal = document.createElement('div');
+    modal.id = 'release-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+    modal.innerHTML = `<div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:400px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="font-size:18px;font-family:'DM Serif Display',serif;margin-bottom:12px">⛔ Release Blocked</div>
+      <div style="font-size:13px;color:var(--ink-2);margin-bottom:16px">
+        This mailbox has an outstanding payment issue (<strong>${accessStatus.replace(/_/g,' ')}</strong>).
+        Mail cannot be released until payment is resolved.<br><br>A notification has been sent to the client.
+      </div>
+      <button class="btn btn-secondary btn-full" onclick="qs('release-modal').remove()">Close</button>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    apiPost({ action:'notifyNonPayment', uuid:STATE.uuid, planCardId, mailId }).catch(()=>{});
+    return;
+  }
 
   // Fetch active agents for this plan card
   let agents = [];
