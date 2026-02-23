@@ -572,11 +572,12 @@ async function api(path, opts = {}) {
   return res.json();
 }
 async function apiPost(body) {
-  return fetch(API_URL.replace('/exec', '/exec'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  }).then(r => r.json());
+  // Use GET instead of POST to avoid CORS preflight issues with Apps Script
+  const { uuid, action, ...rest } = body;
+  const data  = encodeURIComponent(JSON.stringify(rest));
+  const url   = API_URL + '&uuid=' + encodeURIComponent(uuid) + '&action=' + encodeURIComponent(action) + '&data=' + data;
+  const res   = await fetch(url);
+  return res.json();
 }
 
 // ── Boot ─────────────────────────────────────────────────
