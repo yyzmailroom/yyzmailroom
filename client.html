@@ -368,7 +368,8 @@
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes spin  { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
 
   /* ── Steps indicator ────────────────────────────────── */
   .steps {
@@ -578,11 +579,24 @@ async function apiPost(body) {
 }
 
 // ── Boot ─────────────────────────────────────────────────
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedAuth(uuid) {
+  try {
+    const raw = sessionStorage.getItem('auth_' + uuid);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) { sessionStorage.removeItem('auth_' + uuid); return null; }
+    return data;
+  } catch(e) { return null; }
+}
+
+function setCachedAuth(uuid, data) {
+  try { sessionStorage.setItem('auth_' + uuid, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
+}
+
 async function boot() {
   STATE.uuid = getUUID();
-
-  // Small delay to show loading bar
-  await new Promise(r => setTimeout(r, 900));
 
   if (!STATE.uuid) {
     hideLoading();
@@ -590,28 +604,40 @@ async function boot() {
     return;
   }
 
+  // Check session cache first — instant load on refresh
+  const cached = getCachedAuth(STATE.uuid);
+  if (cached && cached.status === 'client') {
+    STATE.access = cached;
+    hideLoading();
+    renderClient(cached);
+    // Silently refresh cache in background
+    api('uuid=' + encodeURIComponent(STATE.uuid)).then(fresh => {
+      if (fresh && fresh.status === 'client') setCachedAuth(STATE.uuid, fresh);
+    }).catch(() => {});
+    return;
+  }
+
+  // No cache — show loading bar then fetch
+  await new Promise(r => setTimeout(r, 600));
+
   try {
     const data = await api('uuid=' + encodeURIComponent(STATE.uuid));
     STATE.access = data;
-
     hideLoading();
 
     if (data.status === 'blocked' || data.status === 'error') {
       showBlocked(
         data.status === 'error' ? 'Error' : 'Access Unavailable',
-        data.message,
-        null, null
+        data.message, null, null
       );
       return;
     }
-
     if (data.status === 'staff') {
-      // Staff trying to use client portal
       showBlocked('Wrong Portal', 'Please use the staff portal to access your dashboard.', null, null);
       return;
     }
-
     if (data.status === 'client') {
+      setCachedAuth(STATE.uuid, data);
       renderClient(data);
     }
 
@@ -990,9 +1016,17 @@ function renderPendingActivation(sub, stepsHtml) {
     </div>`;
 }
 
+// ── Skeleton HTML ─────────────────────────────────────────
+function skeletonCard(lines = 2) {
+  const bars = Array(lines).fill(0).map((_, i) =>
+    `<div style="height:${i===0?'28px':'12px'};width:${i===0?'40%':Math.floor(50+Math.random()*40)+'%'};background:var(--bg-2);border-radius:4px;margin-bottom:8px;animation:pulse 1.4s ease infinite ${i*0.15}s"></div>`
+  ).join('');
+  return `<div style="padding:16px">${bars}</div>`;
+}
+
 // ── Dashboard ─────────────────────────────────────────────
 async function renderDashboard(sub, access) {
-  // Render shell immediately
+  // Render shell + skeleton instantly — zero wait
   qs('content-area').innerHTML = `
     <div id="tabs-bar">
       <div class="tabs">
@@ -1002,22 +1036,23 @@ async function renderDashboard(sub, access) {
       </div>
     </div>
     <div class="main" id="dashboard-content">
-      <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading your dashboard...</div></div>
+      <div class="stats-row" style="margin-bottom:20px">
+        ${[0,1,2,3].map(() => `<div class="stat-card">${skeletonCard(2)}</div>`).join('')}
+      </div>
+      <div class="card">${skeletonCard(4)}</div>
     </div>`;
 
-  // Fetch all data in parallel — one round trip each, all at once
+  // All 3 fetches fire simultaneously
   const [mailData, planData, recipientData] = await Promise.allSettled([
     api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`),
     sub.planCardId ? api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`) : Promise.resolve(null),
     sub.planCardId ? api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`) : Promise.resolve(null)
   ]);
 
-  // Cache results
   STATE.mailLog    = mailData.status === 'fulfilled' ? ((mailData.value.mailLog || []).filter(m => m.mailId)) : [];
   STATE.planCard   = planData.status === 'fulfilled' && planData.value ? planData.value.planCard : null;
   STATE.recipients = recipientData.status === 'fulfilled' && recipientData.value ? (recipientData.value.recipients || []) : [];
 
-  // Render mail tab from cache
   renderMailTab(sub, access);
 }
 
