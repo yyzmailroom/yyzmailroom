@@ -866,6 +866,10 @@ function renderLogForm(container) {
         </div>
 
         <div class="form-divider">Mail Details</div>
+        <div class="form-group">
+          <label>Sender Name <span style="color:var(--ink-4);text-transform:none">(shown to client — who is this from?)</span></label>
+          <input type="text" id="log-sender" placeholder="e.g. TD Bank, CRA, Amazon, John Smith...">
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label>Type</label>
@@ -875,7 +879,7 @@ function renderLogForm(container) {
             </select>
           </div>
           <div class="form-group">
-            <label>Physical Location</label>
+            <label>Physical Location <span style="color:var(--ink-4);text-transform:none">(staff only)</span></label>
             <input type="text" id="log-location" placeholder="e.g. Shelf A3, Bin 2">
           </div>
         </div>
@@ -1054,8 +1058,9 @@ async function submitLogMail() {
       clientId:         pc.clientId,
       subscriptionId:   pc.subscriptionId,
       locationId:       STATE.access.locationId,
-      recipientId:      '',
-      recipientName:    qs('log-recipient-search').value,
+      recipientId:      pc.recipientId || '',
+      recipientName:    pc.name || qs('log-recipient-search').value,
+      senderName:       (qs('log-sender') ? qs('log-sender').value.trim() : ''),
       type:             type,
       confidential:     isConfidential,
       specialCase:      isSpecial,
