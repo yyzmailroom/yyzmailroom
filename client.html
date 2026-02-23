@@ -1660,7 +1660,7 @@ async function submitAddRecipient(planCardId, key) {
         planCardId, name,
         companyName: akaEl ? akaEl.value.trim() : '',
         type:        typeEl ? typeEl.value : 'individual',
-        status: 'pending'
+        status: 'active'
       });
       renderPlansTab(STATE.activeSub, STATE.access);
     } else {
@@ -1718,33 +1718,84 @@ async function submitFwdUpdate(planCardId, key) {
 
 // ── Agents Tab ────────────────────────────────────────────
 function renderAgentsTab(sub, access) {
-  const dc     = qs('dashboard-content');
-  const agents = STATE.agents || [];
-  const pc     = STATE.planCard;
-  const maxA   = 3;
+  const dc      = qs('dashboard-content');
+  const agents  = STATE.agents || [];
+  const maxA    = 3;
   const activeA = agents.filter(a => a.status === 'active' || !a.status).length;
   const canAdd  = activeA < maxA;
+  const pcId    = encodeURIComponent(sub.planCardId || '');
 
   const agentRows = agents.length === 0
     ? `<div style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px">
         No pickup agents added yet. Add up to ${maxA} authorized agents.
-      </div>`
-    : agents.map(a => `
-      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
-        <div style="width:36px;height:36px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink-2);flex-shrink:0">
-          ${(a.name||'?')[0].toUpperCase()}
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500">${a.name}</div>
-          <div style="font-size:11px;color:var(--ink-4);margin-top:1px">
-            ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : ''}
-            ${a.phone ? ' · ' + a.phone : ''}
-            ${a.notes ? ' · ' + a.notes : ''}
+       </div>`
+    : agents.map(a => {
+        const safeId   = encodeURIComponent(a.agentId || '');
+        const safeName = encodeURIComponent(a.name || '');
+        return `
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink-2);flex-shrink:0">
+            ${(a.name || '?')[0].toUpperCase()}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${a.name || ''}</div>
+            <div style="font-size:11px;color:var(--ink-4);margin-top:1px">
+              ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : ''}
+              ${a.phone ? ' · ' + a.phone : ''}
+              ${a.notes ? ' · ' + a.notes : ''}
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="color:var(--red);border-color:var(--red-border)"
+            onclick="removeAgent('${safeId}','${safeName}')">Remove</button>
+        </div>`;
+      }).join('');
+
+  const addFormHtml = canAdd ? `
+    <div id="agent-add-section">
+      <div id="agent-add-toggle-row">
+        <button class="btn btn-secondary" onclick="toggleAddAgentForm()">+ Add Pickup Agent</button>
+      </div>
+      <div id="agent-add-form" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:12px;box-shadow:var(--shadow)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:14px">New Pickup Agent</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" id="ag-name" placeholder="Jane Smith">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="text" id="ag-phone" placeholder="416-555-0100">
           </div>
         </div>
-        <button class="btn btn-secondary btn-sm" style="color:var(--red);border-color:var(--red-border)"
-          onclick="removeAgent('${a.agentId}', '${(a.name||'').replace(/'/g,"\'")}')">Remove</button>
-      </div>`).join('');
+        <div class="form-row">
+          <div class="form-group">
+            <label>ID Type</label>
+            <select id="ag-idtype">
+              <option value="Driver's Licence">Driver's Licence</option>
+              <option value="Passport">Passport</option>
+              <option value="Health Card">Health Card</option>
+              <option value="Employee ID">Employee ID</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Last 4 digits of ID</label>
+            <input type="text" id="ag-idlast4" placeholder="1234" maxlength="4">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes <span style="color:var(--ink-4);text-transform:none;font-weight:400">(optional)</span></label>
+          <input type="text" id="ag-notes" placeholder="e.g. My assistant, alternate contact...">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-primary" id="ag-submit" onclick="submitAddAgent('${pcId}')">Add Agent</button>
+          <button class="btn btn-secondary" onclick="toggleAddAgentForm()">Cancel</button>
+        </div>
+      </div>
+    </div>` : `
+    <div style="padding:10px 14px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
+      Maximum of ${maxA} agents reached. Remove one to add another.
+    </div>`;
 
   dc.innerHTML = `
     <div>
@@ -1758,55 +1809,10 @@ function renderAgentsTab(sub, access) {
         </div>
         ${agentRows}
       </div>
-
-      ${canAdd ? `
-      <div id="agent-add-section">
-        <div id="agent-add-toggle-row">
-          <button class="btn btn-secondary" onclick="toggleAddAgentForm()">+ Add Pickup Agent</button>
-        </div>
-        <div id="agent-add-form" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:12px;box-shadow:var(--shadow)">
-          <div style="font-size:13px;font-weight:600;margin-bottom:14px">New Pickup Agent</div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Full Name *</label>
-              <input type="text" id="ag-name" placeholder="Jane Smith">
-            </div>
-            <div class="form-group">
-              <label>Phone</label>
-              <input type="text" id="ag-phone" placeholder="416-555-0100">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>ID Type</label>
-              <select id="ag-idtype">
-                <option value="Driver's Licence">Driver's Licence</option>
-                <option value="Passport">Passport</option>
-                <option value="Health Card">Health Card</option>
-                <option value="Employee ID">Employee ID</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Last 4 digits of ID</label>
-              <input type="text" id="ag-idlast4" placeholder="1234" maxlength="4">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Notes <span style="color:var(--ink-4);text-transform:none;font-weight:400">(optional)</span></label>
-            <input type="text" id="ag-notes" placeholder="e.g. My assistant, alternate contact...">
-          </div>
-          <div style="display:flex;gap:8px;margin-top:4px">
-            <button class="btn btn-primary" id="ag-submit" onclick="submitAddAgent('${sub.planCardId}')">Add Agent</button>
-            <button class="btn btn-secondary" onclick="toggleAddAgentForm()">Cancel</button>
-          </div>
-        </div>
-      </div>` : `
-      <div style="padding:10px 14px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
-        Maximum of ${maxA} agents reached. Remove one to add another.
-      </div>`}
+      ${addFormHtml}
     </div>`;
 }
+
 
 function toggleAddAgentForm() {
   const form = qs('agent-add-form');
@@ -1821,6 +1827,7 @@ function toggleAddAgentForm() {
 }
 
 async function submitAddAgent(planCardId) {
+  planCardId = decodeURIComponent(planCardId || '');
   const name = qs('ag-name') ? qs('ag-name').value.trim() : '';
   if (!name) { toast('Please enter the agent name', 'error'); return; }
 
@@ -1861,6 +1868,8 @@ async function submitAddAgent(planCardId) {
 }
 
 async function removeAgent(agentId, name) {
+  agentId = decodeURIComponent(agentId || '');
+  name    = decodeURIComponent(name    || '');
   if (!confirm('Remove ' + name + ' as a pickup agent?')) return;
   try {
     const result = await apiPost({
