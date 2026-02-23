@@ -432,6 +432,24 @@
   .stat-mini-val.amber { color: var(--amber); }
   .stat-mini-label { font-size: 10px; color: var(--ink-4); margin-top: 3px; }
 
+
+  /* ── Forwarding/exceptions/plancards ─────────────────── */
+  .fwd-item { display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--white);transition:background 0.1s; }
+  .fwd-item:hover { background:var(--bg); }
+  .fwd-checkbox { width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue); }
+  .pc-card { background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow);overflow:hidden; }
+  .pc-card-header { padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid transparent;transition:background 0.1s; }
+  .pc-card-header:hover { background:var(--bg); }
+  .pc-card-header.open { border-bottom-color:var(--border);background:var(--bg); }
+  .pc-card-body { padding:14px 16px; }
+  .rec-row { display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px; }
+  .rec-row:last-child { border-bottom:none; }
+  .exc-item { background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow); }
+  .exc-actions { display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;margin-top:10px; }
+  .pill.forwarding_pending { background:#E8F4FF;color:var(--blue); }
+  .pill.forwarded { background:var(--green-bg);color:var(--green); }
+  .pill.payment_req { background:#FEE8E8;color:var(--red); }
+  .pill.expired { background:#F0F0F5;color:var(--ink-4); }
   @media (max-width: 700px) {
     .pane-left { width: 100%; border-right: none; }
     .workspace { flex-direction: column; }
@@ -454,10 +472,12 @@
     </div>
     <div class="header-right">
       <div class="view-toggle" id="view-toggle">
-        <button class="view-btn active" onclick="setView('split')"   id="vbtn-split">⊞ Split</button>
-        <button class="view-btn" onclick="setView('tasks')"   id="vbtn-tasks">☰ Tasks</button>
-        <button class="view-btn" onclick="setView('log')"     id="vbtn-log">✏ Log Mail</button>
-        <button class="view-btn" onclick="setView('maillog')" id="vbtn-maillog">📬 Mail Log</button>
+        <button class="view-btn active" onclick="setView('split')"      id="vbtn-split">⊞ Split</button>
+        <button class="view-btn" onclick="setView('tasks')"      id="vbtn-tasks">☰ Tasks</button>
+        <button class="view-btn" onclick="setView('log')"        id="vbtn-log">✏ Log Mail</button>
+        <button class="view-btn" onclick="setView('maillog')"    id="vbtn-maillog">📬 Mail Log</button>
+        <button class="view-btn" onclick="setView('exceptions')" id="vbtn-exceptions">⚠ Exceptions</button>
+        <button class="view-btn" onclick="setView('plancards')"  id="vbtn-plancards">🗂 Plan Cards</button>
       </div>
       <div class="staff-name" id="header-name"></div>
     </div>
@@ -622,7 +642,7 @@ async function loadTasks() {
 // ── View management ───────────────────────────────────────
 function setView(v) {
   STATE.view = v;
-  ['split','tasks','log','maillog'].forEach(n => {
+  ['split','tasks','log','maillog','exceptions','plancards'].forEach(n => {
     const b = qs('vbtn-' + n);
     if (b) b.classList.toggle('active', n === v);
   });
@@ -646,6 +666,12 @@ function renderWorkspace() {
   } else if (STATE.view === 'maillog') {
     ws.innerHTML = `<div class="pane-full" id="maillog-full"></div>`;
     renderStaffMailLog(qs('maillog-full'));
+  } else if (STATE.view === 'exceptions') {
+    ws.innerHTML = `<div class="pane-full" id="exceptions-full"></div>`;
+    renderExceptionsView(qs('exceptions-full'));
+  } else if (STATE.view === 'plancards') {
+    ws.innerHTML = `<div class="pane-full" id="plancards-full"></div>`;
+    renderPlanCardsView(qs('plancards-full'));
   }
 }
 
@@ -901,7 +927,7 @@ function renderLogForm(container) {
             <label>Piece Count</label>
             <input type="text" id="log-pieces" value="1">
           </div>
-          <div class="form-group">
+          <div class="form-group" id="scan-field-wrap">
             <label>Scan Image URL <span style="color:var(--ink-4);text-transform:normal;font-weight:400" id="scan-url-hint">(optional)</span></label>
             <input type="text" id="log-scan" placeholder="https://drive.google.com/...">
           </div>
@@ -919,6 +945,12 @@ function renderLogForm(container) {
         <div class="toggle-row" style="margin-bottom:14px">
           <span class="toggle-label">Confidential <span style="font-size:11px; color:var(--ink-4)">(blocks scan & forward)</span></span>
           <div class="toggle" id="tog-confidential" onclick="onConfidentialToggle()"></div>
+        </div>
+        <div id="confidential-notice" style="display:none;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber);margin-bottom:10px">
+          🔒 <strong>Confidential mail</strong> — Pickup only. No scanning or forwarding. Client will see this notice.
+        </div>
+        <div id="forwarding-notice" style="display:none;padding:8px 12px;background:var(--blue-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--blue);margin-bottom:10px">
+          📬 <strong>Forwarding plan</strong> — This item will be queued for forwarding first week of next month.
         </div>
         <div class="toggle-row" style="margin-bottom:14px">
           <span class="toggle-label">Special Case <span style="font-size:11px; color:var(--ink-4)">(no recipient needed)</span></span>
@@ -958,7 +990,17 @@ function renderLogForm(container) {
 }
 
 function onConfidentialToggle() {
-  qs('tog-confidential').classList.toggle('on');
+  const tog = qs('tog-confidential');
+  tog.classList.toggle('on');
+  const isConf    = tog.classList.contains('on');
+  const scanField = qs('log-scan');
+  const scanWrap  = qs('scan-field-wrap');
+  if (scanField) { scanField.disabled = isConf; scanField.style.opacity = isConf ? '0.4' : '1'; if (isConf) scanField.value = ''; }
+  if (scanWrap)  { scanWrap.style.background = isConf ? 'var(--amber-bg)' : ''; }
+  const confNotice = qs('confidential-notice');
+  if (confNotice) confNotice.style.display = isConf ? 'block' : 'none';
+  const fwdNotice = qs('forwarding-notice');
+  if (fwdNotice && isConf) fwdNotice.style.display = 'none';
   updateScanUrlRequirement();
 }
 
@@ -1105,6 +1147,20 @@ function selectRecipient(data) {
       div.innerHTML = statusHtml;
       box.appendChild(div);
     }
+  }
+  // Forwarding notice
+  const fwdNotice = qs('forwarding-notice');
+  if (fwdNotice) {
+    const hasFwd = data.planType && data.planType.toLowerCase().includes('forward');
+    const isConf = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
+    fwdNotice.style.display = (hasFwd && !isConf) ? 'block' : 'none';
+  }
+  // Block submit for expired plans
+  const submitBtn = qs('log-submit-btn');
+  if (submitBtn) {
+    const isExpired = data.accessStatus === 'CANCELED' || data.accessStatus === 'expired';
+    submitBtn.disabled = isExpired;
+    submitBtn.title = isExpired ? 'Plan expired — use Exception instead' : '';
   }
   updateScanUrlRequirement();
 }
@@ -1293,66 +1349,131 @@ function filterStaffMailLog(query) {
 function renderStaffMailList(mailLog) {
   const el = qs('ml-list');
   if (!el) return;
-
   if (!mailLog.length) {
-    el.innerHTML = `<div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:160px">
-      <div class="empty-icon">📭</div><div class="empty-title">No mail found</div></div>`;
+    el.innerHTML = `<div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:160px"><div class="empty-icon">📭</div><div class="empty-title">No mail found</div></div>`;
     return;
   }
-
-  const statusColor = {
-    arrived:'var(--blue)', scanned:'var(--green)', stored:'var(--amber)',
-    forwarded:'var(--green)', picked_up:'var(--ink-3)', shredded:'var(--ink-4)',
-    discarded:'var(--ink-4)'
-  };
+  const statusColor = { arrived:'var(--blue)',scanned:'var(--green)',stored:'var(--amber)',forwarded:'var(--green)',picked_up:'var(--ink-3)',shredded:'var(--ink-4)',forwarding_pending:'var(--blue)',discarded:'var(--ink-4)' };
+  const hasForwardable = mailLog.some(m => m.forwardingEligible === 'TRUE' && ['arrived','scanned','stored'].includes(m.status));
 
   el.innerHTML = `
+    ${hasForwardable ? `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--blue-bg);border:1px solid rgba(26,74,122,0.15);border-radius:var(--radius);margin-bottom:12px">
+      <span style="font-size:12px;color:var(--blue)">📬 <strong id="fwd-count">0</strong> items selected</span>
+      <button class="btn btn-sm" style="background:var(--blue);color:white;border:none;margin-left:auto" onclick="openForwardModal()" id="fwd-btn" disabled>Forward Selected →</button>
+      <button class="btn btn-secondary btn-sm" onclick="selectAllForwardable()">Select All</button>
+    </div>` : ''}
     <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       ${mailLog.map(m => {
-        const isParcel   = m.type === 'parcel';
-        const canRelease = ['arrived','scanned','stored'].includes(m.status);
-        const days = m.storageDueDate
-          ? Math.ceil((new Date(m.storageDueDate) - new Date()) / (1000*60*60*24))
-          : null;
-        const warnHtml = days !== null && days >= 0 && days <= 5 && canRelease
-          ? `<span style="font-size:10px;color:${days<=2?'var(--red)':'var(--amber)'};font-weight:600;margin-left:6px">⏰ ${days}d</span>` : '';
-
-        // Use encodeURIComponent to safely pass strings into onclick attributes
-        const safeMailId   = encodeURIComponent(m.mailId || '');
-        const safeRecip    = encodeURIComponent(m.recipientName || '');
-        const safePlanCard = encodeURIComponent(m.planCardId || '');
-        const safeStatus   = encodeURIComponent(m.accessStatus || '');
-
-        const actionBtn = canRelease
-          ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${safeMailId}','${safeRecip}','${safePlanCard}','${safeStatus}')">Release</button>`
-          : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${safeMailId}')">View</button>`;
-
+        const isParcel     = m.type === 'parcel';
+        const canRelease   = ['arrived','scanned','stored'].includes(m.status);
+        const isForwardable = m.forwardingEligible === 'TRUE' && canRelease;
+        const days = m.storageDueDate ? Math.ceil((new Date(m.storageDueDate)-new Date())/(1000*60*60*24)) : null;
+        const daysColor = days===null?'':days<0?'var(--red)':days<=2?'var(--red)':days<=5?'var(--amber)':'var(--ink-4)';
+        const daysLabel = days===null?'':days<0?`${Math.abs(days)}d overdue`:days===0?'Due today':`${days}d left`;
+        const daysBadge = canRelease && days!==null ? `<span style="font-size:10px;font-weight:600;color:${daysColor};margin-left:6px">⏰ ${daysLabel}</span>` : '';
+        const fwdBadge  = isForwardable ? `<span style="font-size:10px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:10px;font-weight:600;margin-left:4px">FWD</span>` : '';
+        const confBadge = (m.confidential==='TRUE'||m.confidential===true) ? `<span style="font-size:10px;background:#FFEDED;color:var(--red);padding:1px 6px;border-radius:10px;font-weight:600;margin-left:4px">CONF</span>` : '';
+        const safeMailId   = encodeURIComponent(m.mailId||'');
+        const safeRecip    = encodeURIComponent(m.recipientName||'');
+        const safePlanCard = encodeURIComponent(m.planCardId||'');
+        const safeStatus   = encodeURIComponent(m.accessStatus||'');
         return `
-          <div style="display:grid;grid-template-columns:36px 1fr auto auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);transition:background 0.1s"
-            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:15px">
-              ${isParcel?'📦':'✉️'}
-            </div>
-            <div style="min-width:0">
-              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px">
-                ${m.recipientName || '—'}
-                ${m.confidential==='TRUE'||m.confidential===true?'<span style="font-size:10px;background:var(--red-dim);color:var(--red);padding:1px 6px;border-radius:10px;font-weight:600">CONF</span>':''}
+          <div class="fwd-item">
+            ${isForwardable ? `<input type="checkbox" class="fwd-checkbox" data-mailid="${m.mailId}" onchange="onForwardCheckChange()">` : `<div style="width:16px;flex-shrink:0"></div>`}
+            <div style="width:34px;height:34px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${isParcel?'📦':'✉️'}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap;gap:2px">
+                ${m.recipientName||'—'}${confBadge}${fwdBadge}${daysBadge}
               </div>
               <div style="font-size:11px;color:var(--ink-4);margin-top:2px">
-                ${m.senderName ? 'From: ' + m.senderName + ' · ' : ''}${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})}
-                ${m.physicalLocation ? ' · <span style="color:var(--ink-3)">' + m.physicalLocation + '</span>' : ''}
-                ${warnHtml}
+                ${m.senderName?'From: '+m.senderName+' · ':''}
+                ${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})}
+                ${m.physicalLocation?' · <strong style="color:var(--ink-3)">'+m.physicalLocation+'</strong>':''}
+                ${m.trackingLink?' · <a href="'+m.trackingLink+'" target="_blank" style="color:var(--blue)">Track ↗</a>':''}
               </div>
             </div>
-            <div>
-              <span style="font-size:11px;font-weight:600;color:${statusColor[m.status]||'var(--ink-3)'};background:rgba(0,0,0,0.04);padding:2px 8px;border-radius:10px">
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+              <span style="font-size:11px;font-weight:600;color:${statusColor[m.status]||'var(--ink-3)'};background:rgba(0,0,0,0.04);padding:2px 8px;border-radius:10px;white-space:nowrap">
                 ${m.status.replace(/_/g,' ')}
               </span>
+              ${canRelease
+                ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${safeMailId}','${safeRecip}','${safePlanCard}','${safeStatus}')">Release</button>`
+                : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
             </div>
-            <div>${actionBtn}</div>
           </div>`;
       }).join('')}
     </div>`;
+}
+
+function onForwardCheckChange() {
+  const checked = document.querySelectorAll('.fwd-checkbox:checked');
+  const btn = qs('fwd-btn'), cnt = qs('fwd-count');
+  if (btn) btn.disabled = checked.length === 0;
+  if (cnt) cnt.textContent = checked.length;
+}
+function selectAllForwardable() {
+  document.querySelectorAll('.fwd-checkbox').forEach(cb => { cb.checked = true; });
+  onForwardCheckChange();
+}
+
+function openForwardModal() {
+  const checked = document.querySelectorAll('.fwd-checkbox:checked');
+  const mailIds = Array.from(checked).map(cb => cb.dataset.mailid);
+  if (!mailIds.length) return;
+  const existing = qs('forward-modal'); if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'forward-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:460px;width:100%;box-shadow:var(--shadow-md);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px">📬 Forward ${mailIds.length} Item${mailIds.length>1?'s':''}</div>
+        <button onclick="qs('forward-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3)">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Tracking URL <span style="color:var(--ink-4);text-transform:none;font-weight:400">(visible to client)</span></label>
+        <input type="text" id="fwd-tracking" placeholder="https://www.canadapost-postescanada.ca/track-reperage/...">
+      </div>
+      <div class="form-group">
+        <label>Forwarding Cost (CAD) <span style="color:var(--ink-4);text-transform:none;font-weight:400">(staff only)</span></label>
+        <input type="text" id="fwd-cost" placeholder="e.g. 12.50">
+      </div>
+      <div class="form-group">
+        <label>Notes <span style="color:var(--ink-4);text-transform:none;font-weight:400">(optional)</span></label>
+        <textarea id="fwd-notes" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;resize:vertical;min-height:60px" placeholder="e.g. Shipped via Canada Post Xpresspost..."></textarea>
+      </div>
+      <div style="background:var(--amber-bg);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;color:var(--amber);margin-bottom:16px">
+        ⚠️ Forwarding cost is staff-only and not auto-billed. Invoice separately if needed.
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" style="flex:1" id="fwd-submit-btn" onclick="submitBulkForward(${JSON.stringify(mailIds)})">✓ Confirm Forward</button>
+        <button class="btn btn-secondary" onclick="qs('forward-modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target===modal) modal.remove(); });
+}
+
+async function submitBulkForward(mailIds) {
+  const trackingLink   = qs('fwd-tracking') ? qs('fwd-tracking').value.trim() : '';
+  const forwardingCost = qs('fwd-cost')     ? qs('fwd-cost').value.trim()     : '';
+  const forwardNotes   = qs('fwd-notes')    ? qs('fwd-notes').value.trim()    : '';
+  const btn = qs('fwd-submit-btn');
+  if (btn) { btn.disabled=true; btn.innerHTML='<span class="btn-spinner"></span> Forwarding...'; }
+  try {
+    const result = await apiPost({ action:'bulkForwardMail', uuid:STATE.uuid, mailIds:JSON.stringify(mailIds), trackingLink, forwardingCost, forwardNotes });
+    if (result.status==='ok') {
+      qs('forward-modal').remove();
+      const ok  = (result.results||[]).filter(r=>r.status==='ok').length;
+      const err = (result.results||[]).filter(r=>r.status==='error').length;
+      toast(`${ok} item${ok>1?'s':''} forwarded${err?', '+err+' failed':''}`, ok>0?'success':'error');
+      await loadStaffMailLog();
+    } else throw new Error(result.message||'Forward failed');
+  } catch(err) {
+    toast(err.message,'error');
+    if (btn) { btn.disabled=false; btn.innerHTML='✓ Confirm Forward'; }
+  }
 }
 
 
@@ -1560,86 +1681,281 @@ async function discardSpecialCase(mailId) {
   } catch(e) { toast(e.message, 'error'); }
 }
 
-function openAssignRecipientModal(mailId) {
-  const existing = qs('assign-modal');
-  if (existing) existing.remove();
+function renderExceptionsList(items) {
+  const el = qs('exc-list');
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = `<div style="text-align:center;padding:48px;background:var(--white);border:1px solid var(--border);border-radius:var(--radius)"><div style="font-size:32px;margin-bottom:12px">✅</div><div style="font-size:14px;font-weight:500">No exceptions</div><div style="font-size:13px;color:var(--ink-4)">All mail items have been assigned.</div></div>`;
+    return;
+  }
+  el.innerHTML = items.map(m => {
+    const isParcel = m.type === 'parcel';
+    const days = m.storageDueDate ? Math.ceil((new Date(m.storageDueDate)-new Date())/(1000*60*60*24)) : null;
+    const daysHtml = days!==null ? `<span style="font-size:11px;color:${days<0?'var(--red)':days<=5?'var(--amber)':'var(--ink-4)'};font-weight:600">⏰ ${days<0?Math.abs(days)+'d overdue':days+'d left'}</span>` : '';
+    return `
+      <div class="exc-item">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-size:16px">${isParcel?'📦':'✉️'}</span>
+              <span style="font-size:13px;font-weight:600">${m.mailId}</span>
+              <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
+              ${daysHtml}
+            </div>
+            <div style="font-size:13px;color:var(--ink-2);margin-bottom:2px">
+              ${m.senderName?'From: <strong>'+m.senderName+'</strong> · ':''}Logged ${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'})}
+            </div>
+            <div style="font-size:12px;color:var(--amber);margin-top:4px">Reason: ${m.specialCaseReason||'No recipient matched'}</div>
+            ${m.physicalLocation?`<div style="font-size:11px;color:var(--ink-4);margin-top:2px">Location: ${m.physicalLocation}</div>`:''}
+          </div>
+        </div>
+        <div class="exc-actions">
+          <button class="btn btn-primary btn-sm" onclick="openAssignModal('${m.mailId}')">Assign to Recipient →</button>
+          <button class="btn btn-secondary btn-sm" onclick="openDiscardModal('${m.mailId}')">Discard</button>
+          <button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View Detail</button>
+        </div>
+      </div>`;
+  }).join('');
+}
 
+function openAssignModal(mailId) {
+  const existing = qs('assign-modal'); if (existing) existing.remove();
   const modal = document.createElement('div');
   modal.id = 'assign-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
   modal.innerHTML = `
-    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;box-shadow:var(--shadow-md)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-family:'DM Serif Display',serif;font-size:18px">Assign Recipient</div>
-        <button onclick="qs('assign-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3);cursor:pointer">✕</button>
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:460px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px">Assign Mail Item</div>
+        <button onclick="qs('assign-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3)">✕</button>
       </div>
-      <div style="font-size:13px;color:var(--ink-3);margin-bottom:14px">
-        Search and assign a recipient. Storage clock starts from today.
+      <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px">Search for the recipient this mail belongs to.</div>
+      <div class="form-group" style="position:relative">
+        <label>Search Recipient</label>
+        <input type="text" id="assign-search" placeholder="Type name or company..." autocomplete="off" oninput="searchForAssign(this.value)">
+        <div id="assign-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--white);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-md);z-index:10;max-height:200px;overflow-y:auto"></div>
       </div>
-      <div class="form-group recipient-search-wrap">
-        <input type="text" id="assign-search" placeholder="Type name or company..."
-          oninput="searchRecipientsForAssign(this.value)" autocomplete="off">
-        <div id="assign-results" class="recipient-results" style="display:none"></div>
+      <div id="assign-selected" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:14px;font-size:13px">
+        <div style="font-weight:500" id="assign-sel-name"></div>
+        <div style="font-size:11px;color:var(--ink-4)" id="assign-sel-sub"></div>
       </div>
-      <div id="assign-selected" style="display:none;padding:10px;background:var(--bg);border-radius:var(--radius-sm);font-size:13px;margin-bottom:12px"></div>
       <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary" id="assign-confirm-btn" disabled
-          onclick="confirmAssignRecipient('${mailId}')">Assign & Start Clock</button>
+        <button class="btn btn-primary" style="flex:1" id="assign-submit-btn" onclick="submitAssign('${mailId}')">Assign</button>
         <button class="btn btn-secondary" onclick="qs('assign-modal').remove()">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener('click', e => { if (e.target===modal) modal.remove(); });
 }
 
 let _assignTarget = null;
 
-function searchRecipientsForAssign(query) {
+function searchForAssign(query) {
   const results = qs('assign-results');
-  if (!results) return;
-  if (!query || query.length < 1) { results.style.display = 'none'; return; }
-  const q    = query.toLowerCase();
-  const hits = (_recipientCache || []).filter(r =>
-    [r.name, r.companyName, r.planCardId, r.planName].join(' ').toLowerCase().includes(q)
-  ).slice(0, 8);
-  results.style.display = hits.length ? 'block' : 'none';
-  results.innerHTML = hits.map(r => `
-    <div class="recipient-result-item" onclick="selectAssignTarget(${JSON.stringify(r).replace(/"/g,'&quot;')})">
-      <div class="rri-name">${r.name}${r.companyName?' · <span style="color:var(--ink-4)">'+r.companyName+'</span>':''}</div>
-      <div class="rri-sub">${r.planName || r.planCardId}</div>
-    </div>`).join('');
+  if (!results || !query) { if(results) results.style.display='none'; return; }
+  const q = query.toLowerCase();
+  const hits = (_recipientCache||[]).filter(r => [r.name,r.companyName,r.planCardId].join(' ').toLowerCase().includes(q)).slice(0,8);
+  results.style.display = 'block';
+  if (!hits.length) { results.innerHTML=`<div style="padding:10px 12px;color:var(--ink-4);font-size:13px">No matches</div>`; return; }
+  results.innerHTML = hits.map(r => {
+    const data = JSON.stringify({recipientId:r.recipientId,name:r.name,companyName:r.companyName||'',planCardId:r.planCardId,clientId:r.clientId,subscriptionId:r.subscriptionId||''}).replace(/"/g,'&quot;');
+    return `<div style="padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:13px" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''" onclick="selectForAssign(${data})">
+      <div style="font-weight:500">${r.name}${r.companyName?' · <span style="color:var(--ink-4)">'+r.companyName+'</span>':''}</div>
+      <div style="font-size:11px;color:var(--ink-4)">${r.planName||r.planCardId}</div>
+    </div>`;
+  }).join('');
 }
 
-function selectAssignTarget(r) {
-  _assignTarget = r;
-  qs('assign-results') && (qs('assign-results').style.display = 'none');
+function selectForAssign(data) {
+  _assignTarget = data;
+  const results = qs('assign-results'); if (results) results.style.display='none';
+  const search  = qs('assign-search');  if (search)  search.value = data.name;
   const sel = qs('assign-selected');
-  if (sel) { sel.style.display = 'block'; sel.textContent = 'Selected: ' + r.name + ' (' + r.planCardId + ')'; }
-  const btn = qs('assign-confirm-btn');
-  if (btn) btn.disabled = false;
+  if (sel) {
+    sel.style.display = 'block';
+    const n = qs('assign-sel-name'), sub = qs('assign-sel-sub');
+    if (n) n.textContent = data.name + (data.companyName?' — '+data.companyName:'');
+    if (sub) sub.textContent = data.planCardId;
+  }
 }
 
-async function confirmAssignRecipient(mailId) {
-  if (!_assignTarget) { toast('Select a recipient', 'error'); return; }
+async function submitAssign(mailId) {
+  if (!_assignTarget) { toast('Please select a recipient first','error'); return; }
+  const btn = qs('assign-submit-btn');
+  if (btn) { btn.disabled=true; btn.textContent='Assigning...'; }
   try {
-    await apiPost({
-      action: 'assignMailRecipient', uuid: STATE.uuid, mailId,
-      recipientId:   _assignTarget.recipientId,
-      recipientName: _assignTarget.name,
-      planCardId:    _assignTarget.planCardId,
-      clientId:      _assignTarget.clientId,
-      subscriptionId:_assignTarget.subscriptionId
-    });
-    qs('assign-modal') && qs('assign-modal').remove();
-    toast('Recipient assigned — storage clock started', 'success');
-    _assignTarget = null;
-    await loadStaffMailLog();
-    await loadTasks();
-  } catch(e) { toast(e.message, 'error'); }
+    const result = await apiPost({ action:'assignMailRecipient', uuid:STATE.uuid, mailId, recipientId:_assignTarget.recipientId, recipientName:_assignTarget.name, planCardId:_assignTarget.planCardId, clientId:_assignTarget.clientId, subscriptionId:_assignTarget.subscriptionId });
+    if (result.status==='ok') {
+      qs('assign-modal').remove();
+      toast('Mail assigned to '+_assignTarget.name,'success');
+      _assignTarget = null;
+      await loadExceptions();
+    } else throw new Error(result.message||'Failed');
+  } catch(err) { toast(err.message,'error'); if (btn) { btn.disabled=false; btn.textContent='Assign'; } }
 }
 
-// ── Init ─────────────────────────────────────────────────
-boot();
+function openDiscardModal(mailId) {
+  const reason = prompt('Reason for discarding this item:');
+  if (reason===null) return;
+  apiPost({ action:'updateMailStatus', uuid:STATE.uuid, mailId, status:'discarded', note:reason })
+    .then(r => { if (r.status==='ok') { toast('Item discarded','success'); loadExceptions(); } else toast(r.message||'Failed','error'); })
+    .catch(e => toast(e.message,'error'));
+}
+
+
+// ══════════════════════════════════════════════════════════
+// PLAN CARDS VIEW
+// ══════════════════════════════════════════════════════════
+async function renderPlanCardsView(container) {
+  container.innerHTML = `
+    <div style="max-width:900px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:20px">🗂 Plan Cards</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="pc-search" placeholder="Search client, plan, recipient..." style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;width:240px" oninput="filterPlanCards(this.value)">
+          <button class="btn btn-secondary btn-sm" onclick="loadPlanCardsView()">↻</button>
+        </div>
+      </div>
+      <div id="pc-list"><div style="text-align:center;padding:40px;color:var(--ink-4)">Loading...</div></div>
+    </div>`;
+  await loadPlanCardsView();
+}
+
+let _allPlanCards = [];
+
+async function loadPlanCardsView() {
+  const el = qs('pc-list'); if (!el) return;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getPlanCardsStaff`);
+    _allPlanCards = data.planCards || [];
+    renderPlanCardsList(_allPlanCards);
+  } catch(e) { if(el) el.innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`; }
+}
+
+function filterPlanCards(query) {
+  const q = (query||'').toLowerCase();
+  if (!q) { renderPlanCardsList(_allPlanCards); return; }
+  renderPlanCardsList(_allPlanCards.filter(pc => {
+    return [pc.planCardId,pc.planName,pc.clientId,...(pc.recipients||[]).map(r=>r.name+' '+(r.companyName||''))].join(' ').toLowerCase().includes(q);
+  }));
+}
+
+function renderPlanCardsList(planCards) {
+  const el = qs('pc-list'); if (!el) return;
+  if (!planCards.length) { el.innerHTML=`<div style="text-align:center;padding:40px;color:var(--ink-4)">No plan cards found.</div>`; return; }
+
+  const statusClass = {'ACTIVE':'scanned','CANCELED_WITH_ACCESS':'warning','PAYMENT_REQUIRED':'payment_req','CANCELED':'expired'};
+
+  el.innerHTML = planCards.map((pc,i) => {
+    const recs = pc.recipients||[];
+    const activeRec = recs.filter(r=>r.status==='active');
+    return `
+      <div class="pc-card">
+        <div class="pc-card-header" id="pc-hdr-${i}" onclick="togglePcCard(${i})">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+              <span style="font-size:13px;font-weight:600">${pc.planName||pc.planCardId}</span>
+              <span class="pill ${statusClass[pc.accessStatus]||'stored'}" style="font-size:10px">${(pc.accessStatus||'').replace(/_/g,' ')}</span>
+            </div>
+            <div style="font-size:11px;color:var(--ink-4)">
+              ${pc.planCardId} · ${activeRec.length} recipient${activeRec.length!==1?'s':''}
+              ${pc.forwardingEnabled==='TRUE'?' · Forwarding':''}
+              ${pc.planType&&pc.planType.toLowerCase().includes('scan')?' · Scan':''}
+            </div>
+          </div>
+          <span style="color:var(--ink-4);font-size:14px" id="pc-chevron-${i}">▸</span>
+        </div>
+        <div id="pc-body-${i}" style="display:none" class="pc-card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12px;color:var(--ink-3)">
+            <div>Billing: ${pc.currentPeriodStart||'—'} – ${pc.currentPeriodEnd||'—'}</div>
+            <div>Mail: ${pc.mailsUsed||0}/${pc.mailLimit||'—'} · Parcels: ${pc.parcelsUsed||0}/${pc.parcelLimit||'—'}</div>
+            ${pc.forwardingAddress?`<div style="grid-column:1/-1">Forward to: ${pc.forwardingAddress}, ${pc.forwardingCity||''} ${pc.forwardingProvince||''}</div>`:''}
+          </div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">Recipients (${recs.length})</div>
+          ${recs.length===0 ? `<div style="font-size:12px;color:var(--ink-4);padding:8px 0">No recipients on file.</div>` :
+            recs.map(r => {
+              const safeId  = encodeURIComponent(r.recipientId);
+              const safeName = encodeURIComponent(r.name||'');
+              const safeAka  = encodeURIComponent(r.companyName||'');
+              return `
+              <div class="rec-row" id="rec-row-${r.recipientId}">
+                <div style="width:30px;height:30px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${(r.name||'?')[0].toUpperCase()}</div>
+                <div style="flex:1;min-width:0" id="rec-display-${r.recipientId}">
+                  <div style="font-size:13px;font-weight:500">${r.name}</div>
+                  <div style="font-size:11px;color:var(--ink-4)">${r.companyName||''} · ${r.type||'individual'}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                  <span class="pill ${r.status==='active'?'scanned':'stored'}" style="font-size:10px">${r.status}</span>
+                  ${r.hasMailLogged!=='TRUE' ? `<button class="btn btn-secondary btn-sm" onclick="openEditRecipient('${safeId}','${safeName}','${safeAka}','${r.type||'individual'}')">Edit</button>` : `<span style="font-size:11px;color:var(--ink-4)">Has mail</span>`}
+                  ${r.status==='active' ? `<button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deactivateRecipient('${safeId}','${safeName}')">Deactivate</button>` : ''}
+                </div>
+              </div>
+              <div id="rec-edit-${r.recipientId}" style="display:none;padding:12px;background:var(--bg);border-radius:var(--radius-sm);margin:4px 0">
+                <div class="form-row" style="margin-bottom:8px">
+                  <div><label>Name</label><input type="text" id="re-name-${r.recipientId}" value="${r.name}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px"></div>
+                  <div><label>Also known as</label><input type="text" id="re-aka-${r.recipientId}" value="${r.companyName||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px"></div>
+                </div>
+                <div style="margin-bottom:8px">
+                  <label>Type</label>
+                  <select id="re-type-${r.recipientId}" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+                    <option value="individual" ${r.type==='individual'?'selected':''}>Individual</option>
+                    <option value="company" ${r.type==='company'?'selected':''}>Business/Company</option>
+                  </select>
+                </div>
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-primary btn-sm" onclick="saveRecipientEdit('${r.recipientId}')">Save</button>
+                  <button class="btn btn-secondary btn-sm" onclick="qs('rec-edit-${r.recipientId}').style.display='none'">Cancel</button>
+                </div>
+              </div>`}).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function togglePcCard(i) {
+  const body=qs('pc-body-'+i), chevron=qs('pc-chevron-'+i), header=qs('pc-hdr-'+i);
+  if (!body) return;
+  const open = body.style.display==='none';
+  body.style.display=open?'block':'none';
+  if (chevron) chevron.textContent=open?'▾':'▸';
+  if (header)  header.classList.toggle('open',open);
+}
+
+function openEditRecipient(recipientId, name, companyName) {
+  const editDiv = qs('rec-edit-'+recipientId);
+  if (!editDiv) return;
+  const isOpen = editDiv.style.display!=='none';
+  editDiv.style.display = isOpen?'none':'block';
+  if (!isOpen) {
+    const nameEl=qs('re-name-'+recipientId), akaEl=qs('re-aka-'+recipientId);
+    if (nameEl) nameEl.value=decodeURIComponent(name||'');
+    if (akaEl)  akaEl.value=decodeURIComponent(companyName||'');
+  }
+}
+
+async function saveRecipientEdit(recipientId) {
+  const nameEl=qs('re-name-'+recipientId), akaEl=qs('re-aka-'+recipientId), typeEl=qs('re-type-'+recipientId);
+  if (!nameEl||!nameEl.value.trim()) { toast('Name is required','error'); return; }
+  try {
+    const result = await apiPost({ action:'updateRecipient', uuid:STATE.uuid, recipientId, name:nameEl.value.trim(), companyName:akaEl?akaEl.value.trim():'', type:typeEl?typeEl.value:'individual' });
+    if (result.status==='ok') {
+      toast('Recipient updated','success');
+      const d=qs('rec-display-'+recipientId);
+      if (d) d.innerHTML=`<div style="font-size:13px;font-weight:500">${nameEl.value.trim()}</div><div style="font-size:11px;color:var(--ink-4)">${akaEl?akaEl.value.trim():''} · ${typeEl?typeEl.value:'individual'}</div>`;
+      qs('rec-edit-'+recipientId).style.display='none';
+    } else throw new Error(result.message||'Failed');
+  } catch(err) { toast(err.message,'error'); }
+}
+
+async function deactivateRecipient(recipientId, name) {
+  if (!confirm('Deactivate '+decodeURIComponent(name)+'? They will no longer receive mail.')) return;
+  try {
+    const result = await apiPost({ action:'deactivateRecipient', uuid:STATE.uuid, recipientId });
+    if (result.status==='ok') { toast('Recipient deactivated','success'); await loadPlanCardsView(); }
+    else throw new Error(result.message||'Failed');
+  } catch(err) { toast(err.message,'error'); }
+}
+
 </script>
 </body>
 </html>
