@@ -1160,7 +1160,8 @@ function renderMailList(mailLog, sub) {
         <div class="mail-icon ${isParcel ? 'parcel' : 'letter'}">${icon}</div>
         <div class="mail-info">
           <div class="mail-recipient">${m.recipientName || 'Unknown'}</div>
-          <div class="mail-date">${fmtDateTime(m.loggedAt)}${m.physicalLocation ? ' · ' + m.physicalLocation : ''}</div>
+          <div class="mail-date">${fmtDateTime(m.loggedAt)}${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}</div>
+          ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
         </div>
         <div class="mail-meta">
           <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
