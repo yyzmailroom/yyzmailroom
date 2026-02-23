@@ -567,7 +567,7 @@ function toast(msg, type = '') {
   setTimeout(() => el.remove(), 3500);
 }
 async function api(path, opts = {}) {
-  const url = API_URL + (path ? '&' + path : '');
+  const url = API_URL + (path || '');
   const res = await fetch(url, opts);
   return res.json();
 }
@@ -1125,7 +1125,10 @@ function renderMailTab(sub, access) {
         <!-- Mail list -->
         <div class="section-header">
           <div class="section-title">Mail Log</div>
-          <div class="section-action">Most recent first</div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <div class="section-action" onclick="refreshMailLog()" id="refresh-btn">↻ Refresh</div>
+            <div class="section-action" style="color:var(--ink-4);cursor:default">Most recent first</div>
+          </div>
         </div>
         ${renderMailList(mailLog, sub)}
       </div>`;
@@ -1403,11 +1406,18 @@ async function submitAddAgent(planCardId) {
 
     if (result.status === 'ok') {
       toast(name + ' added as pickup agent', 'success');
-      // Refresh agents cache
-      if (STATE.activeSub && STATE.activeSub.planCardId) {
-        const fresh = await api(`uuid=${STATE.uuid}&action=getAgents&planCardId=${STATE.activeSub.planCardId}`);
-        STATE.agents = fresh.agents || [];
-      }
+      // Update cache directly — no re-fetch needed
+      STATE.agents.push({
+        agentId:   result.agentId || 'AGT_NEW_' + Date.now(),
+        planCardId: planCardId,
+        clientId:  STATE.access.clientId,
+        name:      name,
+        phone:     qs('ag-phone') ? qs('ag-phone').value.trim() : '',
+        idType:    qs('ag-idtype') ? qs('ag-idtype').value : '',
+        idLast4:   qs('ag-idlast4') ? qs('ag-idlast4').value.trim() : '',
+        notes:     qs('ag-notes') ? qs('ag-notes').value.trim() : '',
+        status:    'active'
+      });
       renderAgentsTab(STATE.activeSub, STATE.access);
     } else {
       throw new Error(result.message || 'Failed to add agent');
@@ -1439,6 +1449,22 @@ async function deactivateAgent(agentId, name) {
     }
   } catch(err) {
     toast(err.message, 'error');
+  }
+}
+
+// ── Refresh Mail Log ─────────────────────────────────────
+async function refreshMailLog() {
+  const btn = qs('refresh-btn');
+  if (btn) { btn.textContent = '↻ Refreshing...'; }
+  const sub = STATE.activeSub;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
+    STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
+    renderMailTab(sub, STATE.access);
+    // Re-attach the refresh button listener after re-render
+  } catch(e) {
+    toast('Could not refresh', 'error');
+    if (btn) btn.textContent = '↻ Refresh';
   }
 }
 
