@@ -508,7 +508,7 @@ function toast(msg, type='') {
   setTimeout(() => el.remove(), 3500);
 }
 async function api(path) {
-  const res = await fetch(API_URL + '&' + path);
+  const res = await fetch(API_URL + (path || ''));
   return res.json();
 }
 async function apiPost(body) {
