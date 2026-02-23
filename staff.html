@@ -454,9 +454,10 @@
     </div>
     <div class="header-right">
       <div class="view-toggle" id="view-toggle">
-        <button class="view-btn active" onclick="setView('split')" id="vbtn-split">⊞ Split</button>
-        <button class="view-btn" onclick="setView('tasks')"  id="vbtn-tasks">☰ Tasks</button>
-        <button class="view-btn" onclick="setView('log')"    id="vbtn-log">✏ Log Mail</button>
+        <button class="view-btn active" onclick="setView('split')"   id="vbtn-split">⊞ Split</button>
+        <button class="view-btn" onclick="setView('tasks')"   id="vbtn-tasks">☰ Tasks</button>
+        <button class="view-btn" onclick="setView('log')"     id="vbtn-log">✏ Log Mail</button>
+        <button class="view-btn" onclick="setView('maillog')" id="vbtn-maillog">📬 Mail Log</button>
       </div>
       <div class="staff-name" id="header-name"></div>
     </div>
@@ -618,7 +619,7 @@ async function loadTasks() {
 // ── View management ───────────────────────────────────────
 function setView(v) {
   STATE.view = v;
-  ['split','tasks','log'].forEach(n => {
+  ['split','tasks','log','maillog'].forEach(n => {
     const b = qs('vbtn-' + n);
     if (b) b.classList.toggle('active', n === v);
   });
@@ -639,6 +640,9 @@ function renderWorkspace() {
   } else if (STATE.view === 'log') {
     ws.innerHTML = `<div class="pane-full" id="log-full"></div>`;
     renderLogForm(qs('log-full'));
+  } else if (STATE.view === 'maillog') {
+    ws.innerHTML = `<div class="pane-full" id="maillog-full"></div>`;
+    renderStaffMailLog(qs('maillog-full'));
   }
 }
 
@@ -1133,6 +1137,251 @@ async function snoozeTask(taskId, until) {
 
 function jumpToMailLog(mailId) {
   toast('Mail ID: ' + mailId + ' — full mail log view coming soon.');
+}
+
+// ── Staff Mail Log View ───────────────────────────────────
+async function renderStaffMailLog(container) {
+  container.innerHTML = `
+    <div style="max-width:900px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:20px">Mail Log</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="ml-search" placeholder="Search recipient or sender..."
+            style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:220px;font-family:inherit"
+            oninput="filterStaffMailLog(this.value)">
+          <select id="ml-status-filter" onchange="filterStaffMailLog(qs('ml-search').value)"
+            style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit">
+            <option value="">All Status</option>
+            <option value="arrived">Arrived</option>
+            <option value="scanned">Scanned</option>
+            <option value="stored">Stored</option>
+            <option value="forwarded">Forwarded</option>
+            <option value="picked_up">Picked Up</option>
+            <option value="shredded">Shredded</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadStaffMailLog()">↻</button>
+        </div>
+      </div>
+      <div id="ml-list"><div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:200px"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div></div>
+    </div>`;
+
+  await loadStaffMailLog();
+}
+
+let _allStaffMail = [];
+
+async function loadStaffMailLog() {
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getMailLogStaff&limit=100`);
+    _allStaffMail = data.mailLog || [];
+    renderStaffMailList(_allStaffMail);
+  } catch(e) {
+    toast('Could not load mail log', 'error');
+  }
+}
+
+function filterStaffMailLog(query) {
+  const status = qs('ml-status-filter') ? qs('ml-status-filter').value : '';
+  const q      = (query || '').toLowerCase();
+  const filtered = _allStaffMail.filter(m => {
+    if (status && m.status !== status) return false;
+    if (!q) return true;
+    return [m.recipientName, m.senderName, m.planCardId, m.mailId, m.physicalLocation]
+      .join(' ').toLowerCase().includes(q);
+  });
+  renderStaffMailList(filtered);
+}
+
+function renderStaffMailList(mailLog) {
+  const el = qs('ml-list');
+  if (!el) return;
+
+  if (!mailLog.length) {
+    el.innerHTML = `<div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:160px">
+      <div class="empty-icon">📭</div><div class="empty-title">No mail found</div></div>`;
+    return;
+  }
+
+  const statusColor = {
+    arrived:'var(--blue)', scanned:'var(--green)', stored:'var(--amber)',
+    forwarded:'var(--green)', picked_up:'var(--ink-3)', shredded:'var(--ink-4)',
+    discarded:'var(--ink-4)'
+  };
+
+  el.innerHTML = `
+    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
+      ${mailLog.map(m => {
+        const isParcel = m.type === 'parcel';
+        const canRelease = ['arrived','scanned','stored'].includes(m.status);
+        const days = (() => {
+          if (!m.storageDueDate) return null;
+          return Math.ceil((new Date(m.storageDueDate) - new Date()) / (1000*60*60*24));
+        })();
+        const warnHtml = days !== null && days >= 0 && days <= 5 && canRelease
+          ? `<span style="font-size:10px;color:${days<=2?'var(--red)':'var(--amber)'};font-weight:600;margin-left:6px">⏰ ${days}d</span>` : '';
+
+        return `
+          <div style="display:grid;grid-template-columns:36px 1fr auto auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);transition:background 0.1s"
+            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+            <div style="width:36px;height:36px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:15px">
+              ${isParcel?'📦':'✉️'}
+            </div>
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px">
+                ${m.recipientName || '—'}
+                ${m.confidential==='TRUE'||m.confidential===true?'<span style="font-size:10px;background:var(--red-dim);color:var(--red);padding:1px 6px;border-radius:10px;font-weight:600">CONF</span>':''}
+              </div>
+              <div style="font-size:11px;color:var(--ink-4);margin-top:2px">
+                ${m.senderName ? 'From: ' + m.senderName + ' · ' : ''}${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})}
+                ${m.physicalLocation ? ' · <span style="color:var(--ink-3)">' + m.physicalLocation + '</span>' : ''}
+                ${warnHtml}
+              </div>
+            </div>
+            <div>
+              <span style="font-size:11px;font-weight:600;color:${statusColor[m.status]||'var(--ink-3)'};background:rgba(0,0,0,0.04);padding:2px 8px;border-radius:10px">
+                ${m.status.replace(/_/g,' ')}
+              </span>
+            </div>
+            <div>
+              ${canRelease
+                ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${m.mailId}','${(m.recipientName||'').replace(/'/g,"\'")}','${m.planCardId}')">Release</button>`
+                : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ── Release Modal ─────────────────────────────────────────
+async function openReleaseModal(mailId, recipientName, planCardId) {
+  // Remove any existing modal
+  const existing = qs('release-modal');
+  if (existing) existing.remove();
+
+  // Fetch active agents for this plan card
+  let agents = [];
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getAgentsForPlanCard&planCardId=${planCardId}`);
+    agents = data.agents || [];
+  } catch(e) {}
+
+  const agentOptions = agents.length === 0
+    ? `<div style="padding:12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:13px;color:var(--amber)">
+        ⚠️ No authorized pickup agents on file. Client needs to add agents from their dashboard before mail can be released.
+      </div>`
+    : `<div style="display:flex;flex-direction:column;gap:8px" id="agent-options">
+        ${agents.map(a => `
+          <label style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:background 0.1s"
+            onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+            <input type="radio" name="release-agent" value="${a.agentId}" style="flex-shrink:0">
+            <div>
+              <div style="font-size:13px;font-weight:500">${a.name}</div>
+              <div style="font-size:11px;color:var(--ink-4)">${a.idType?a.idType+(a.idLast4?' ···'+a.idLast4:''):''} ${a.phone?'· '+a.phone:''}</div>
+            </div>
+          </label>`).join('')}
+      </div>`;
+
+  const modal = document.createElement('div');
+  modal.id = 'release-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:440px;width:100%;box-shadow:var(--shadow-md);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px">Release Mail</div>
+        <button onclick="qs('release-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3);cursor:pointer">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px">
+        Releasing mail for <strong>${recipientName}</strong>. Select the authorized agent collecting this item.
+      </div>
+      ${agentOptions}
+      ${agents.length > 0 ? `
+      <div style="margin-top:16px">
+        <label style="font-size:11px;font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Release Notes <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+        <textarea id="release-notes" style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;resize:vertical;min-height:60px" placeholder="e.g. ID verified, signed release form..."></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn btn-success" style="flex:1" onclick="submitRelease('${mailId}','${planCardId}')">✓ Confirm Release</button>
+        <button class="btn btn-secondary" onclick="qs('release-modal').remove()">Cancel</button>
+      </div>` : `
+      <button class="btn btn-secondary btn-full" style="margin-top:16px" onclick="qs('release-modal').remove()">Close</button>`}
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function submitRelease(mailId, planCardId) {
+  const selected = document.querySelector('input[name="release-agent"]:checked');
+  if (!selected) { toast('Please select a pickup agent', 'error'); return; }
+
+  const btn = document.querySelector('#release-modal .btn-success');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Releasing...'; }
+
+  try {
+    const result = await apiPost({
+      action:       'releaseMail',
+      uuid:         STATE.uuid,
+      mailId:       mailId,
+      agentId:      selected.value,
+      releaseNotes: qs('release-notes') ? qs('release-notes').value : ''
+    });
+
+    if (result.status === 'ok') {
+      qs('release-modal').remove();
+      toast('Mail released successfully', 'success');
+      // Refresh mail log
+      await loadStaffMailLog();
+      // Refresh tasks
+      await loadTasks();
+      if (STATE.view === 'split') renderTasksPane();
+    } else {
+      throw new Error(result.message || 'Release failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '✓ Confirm Release'; }
+  }
+}
+
+function openMailDetail(mailId) {
+  // Find in cached list
+  const m = _allStaffMail.find(x => x.mailId === mailId);
+  if (!m) { toast('Mail item not found'); return; }
+
+  const existing = qs('mail-detail-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'mail-detail-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;box-shadow:var(--shadow-md)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:17px">${m.type === 'parcel' ? '📦' : '✉️'} Mail Detail</div>
+        <button onclick="qs('mail-detail-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3)">✕</button>
+      </div>
+      ${[
+        ['Mail ID',     m.mailId],
+        ['Recipient',   m.recipientName],
+        ['Sender',      m.senderName || '—'],
+        ['Type',        m.type],
+        ['Status',      m.status.replace(/_/g,' ')],
+        ['Location',    m.physicalLocation || '—'],
+        ['Logged',      m.loggedAt],
+        ['Storage Due', m.storageDueDate || '—'],
+        ['Note',        m.noteToClient || '—'],
+        ['Released To', m.releasedTo || '—'],
+        ['Released At', m.releasedAt || '—'],
+      ].map(([k,v]) => `
+        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <span style="color:var(--ink-3)">${k}</span>
+          <span style="font-weight:500;text-align:right;max-width:240px">${v}</span>
+        </div>`).join('')}
+      <button class="btn btn-secondary btn-full" style="margin-top:16px" onclick="qs('mail-detail-modal').remove()">Close</button>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 // ── Init ─────────────────────────────────────────────────
