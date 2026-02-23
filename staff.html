@@ -534,17 +534,44 @@ const TASK_META = {
 };
 
 // ── Boot ─────────────────────────────────────────────────
+function getStaffCache(uuid) {
+  try {
+    const raw = sessionStorage.getItem('staff_' + uuid);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > 5 * 60 * 1000) { sessionStorage.removeItem('staff_' + uuid); return null; }
+    return data;
+  } catch(e) { return null; }
+}
+function setStaffCache(uuid, data) {
+  try { sessionStorage.setItem('staff_' + uuid, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
+}
+
 async function boot() {
   STATE.uuid = getUUID();
-  await new Promise(r => setTimeout(r, 800));
 
   if (!STATE.uuid) { hideLoading(); showBlocked('No UUID in URL'); return; }
+
+  // Use cache for instant load on refresh
+  const cached = getStaffCache(STATE.uuid);
+  if (cached && cached.status === 'staff') {
+    STATE.access = cached;
+    qs('header-name').innerHTML = `<strong>${cached.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${cached.role}</span>`;
+    hideLoading();
+    await loadTasks();
+    renderWorkspace();
+    api('uuid=' + encodeURIComponent(STATE.uuid)).then(f => { if (f && f.status === 'staff') setStaffCache(STATE.uuid, f); }).catch(()=>{});
+    return;
+  }
+
+  await new Promise(r => setTimeout(r, 600));
 
   try {
     const data = await api('uuid=' + encodeURIComponent(STATE.uuid));
     STATE.access = data;
     hideLoading();
 
+    if (data.status === 'staff') setStaffCache(STATE.uuid, data);
     if (data.status !== 'staff') {
       showBlocked(data.status === 'client'
         ? 'This portal is for staff only. Please use the client portal.'
