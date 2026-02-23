@@ -737,7 +737,7 @@ async function switchSubscription(subscriptionId) {
   loadAndRenderSub(sub, STATE.access);
 }
 
-function loadAndRenderSub(sub, access) {
+async function loadAndRenderSub(sub, access) {
   renderBanner(sub);
 
   if (!sub.canAccess) {
