@@ -1004,7 +1004,7 @@ function toggleSpecial() {
 // ── Recipient search ──────────────────────────────────────
 let _searchTimeout = null;
 
-async // Recipient cache — loaded once per session, filtered client-side
+// Recipient cache — loaded once per session, filtered client-side
 let _recipientCache = null;
 let _recipientCacheTime = 0;
 const CACHE_TTL = 5 * 60 * 1000;
@@ -1309,14 +1309,23 @@ function renderStaffMailList(mailLog) {
   el.innerHTML = `
     <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
       ${mailLog.map(m => {
-        const isParcel = m.type === 'parcel';
+        const isParcel   = m.type === 'parcel';
         const canRelease = ['arrived','scanned','stored'].includes(m.status);
-        const days = (() => {
-          if (!m.storageDueDate) return null;
-          return Math.ceil((new Date(m.storageDueDate) - new Date()) / (1000*60*60*24));
-        })();
+        const days = m.storageDueDate
+          ? Math.ceil((new Date(m.storageDueDate) - new Date()) / (1000*60*60*24))
+          : null;
         const warnHtml = days !== null && days >= 0 && days <= 5 && canRelease
           ? `<span style="font-size:10px;color:${days<=2?'var(--red)':'var(--amber)'};font-weight:600;margin-left:6px">⏰ ${days}d</span>` : '';
+
+        // Use encodeURIComponent to safely pass strings into onclick attributes
+        const safeMailId   = encodeURIComponent(m.mailId || '');
+        const safeRecip    = encodeURIComponent(m.recipientName || '');
+        const safePlanCard = encodeURIComponent(m.planCardId || '');
+        const safeStatus   = encodeURIComponent(m.accessStatus || '');
+
+        const actionBtn = canRelease
+          ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${safeMailId}','${safeRecip}','${safePlanCard}','${safeStatus}')">Release</button>`
+          : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${safeMailId}')">View</button>`;
 
         return `
           <div style="display:grid;grid-template-columns:36px 1fr auto auto;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);transition:background 0.1s"
@@ -1340,18 +1349,20 @@ function renderStaffMailList(mailLog) {
                 ${m.status.replace(/_/g,' ')}
               </span>
             </div>
-            <div>
-              ${canRelease
-                ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${m.mailId}','${(m.recipientName||'').replace(/'/g,"\'")}','${m.planCardId}','${m.accessStatus||\"\"}')">Release</button>`
-                : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
-            </div>
+            <div>${actionBtn}</div>
           </div>`;
       }).join('')}
     </div>`;
 }
 
+
 // ── Release Modal ─────────────────────────────────────────
 async function openReleaseModal(mailId, recipientName, planCardId, accessStatus) {
+  // Decode URI-encoded params (passed safely from onclick attributes)
+  mailId        = decodeURIComponent(mailId        || '');
+  recipientName = decodeURIComponent(recipientName || '');
+  planCardId    = decodeURIComponent(planCardId    || '');
+  accessStatus  = decodeURIComponent(accessStatus  || '');
   const existing = qs('release-modal');
   if (existing) existing.remove();
 
@@ -1460,6 +1471,7 @@ async function submitRelease(mailId, planCardId) {
 }
 
 function openMailDetail(mailId) {
+  mailId = decodeURIComponent(mailId || '');
   // Find in cached list
   const m = _allStaffMail.find(x => x.mailId === mailId);
   if (!m) { toast('Mail item not found'); return; }
