@@ -480,6 +480,21 @@
   .toast.error   { background: var(--red); }
   @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+  /* ── Subscription switcher ─────────────────────────── */
+  .sub-switcher { display:flex; gap:8px; padding:10px 24px; background:var(--bg-2); border-bottom:1px solid var(--border); overflow-x:auto; }
+  .sub-pill { padding:5px 14px; border-radius:20px; font-size:12px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--white); color:var(--ink-2); white-space:nowrap; transition:all 0.15s; }
+  .sub-pill.active { background:var(--ink); color:var(--white); border-color:var(--ink); }
+  .sub-pill.blocked { border-color:var(--red); color:var(--red); }
+  /* ── Plan card grid ─────────────────────────────────── */
+  .plan-card-grid { display:flex; flex-direction:column; gap:12px; }
+  .plan-card-item { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
+  .plan-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .plan-card-name { font-size:14px; font-weight:600; color:var(--ink); }
+  .plan-card-sub { font-size:12px; color:var(--ink-3); margin-top:2px; }
+  .recipient-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .recipient-row:last-child { border-bottom:none; }
+  .add-recipient-row { display:flex; align-items:center; gap:10px; padding:12px 0 4px; }
+
   /* ── Responsive ─────────────────────────────────────── */
   @media (max-width: 600px) {
     .main { padding: 16px; gap: 16px; }
@@ -509,6 +524,9 @@
     </div>
   </header>
 
+  <!-- Subscription switcher (hidden until needed) -->
+  <div id="sub-switcher-area"></div>
+
   <!-- Banner area -->
   <div id="banner-area"></div>
 
@@ -529,6 +547,7 @@ let STATE = {
   uuid:         null,
   access:       null,
   activeSub:    null,
+  allSubs:      [],
   mailLog:      [],
   planCard:     null,
   recipients:   [],
@@ -658,35 +677,71 @@ function hideLoading() {
 
 // ── Client Render ─────────────────────────────────────────
 function renderClient(access) {
-  // Set name
   qs('header-name').innerHTML = `<strong>${access.name}</strong>`;
 
-  // Pick first ACTIVE subscription, fallback to first
-  const subs = access.subscriptions || [];
-  STATE.activeSub = subs.find(s => s.accessStatus === 'ACTIVE') || subs[0];
-
-  if (!STATE.activeSub) {
+  const subs = (access.subscriptions || []).filter(s => s.subscriptionId);
+  if (!subs.length) {
     showBlocked('No Subscription', 'No subscription found for your account.', null, null);
     return;
   }
 
-  const sub = STATE.activeSub;
+  // Pick best sub: prefer ACTIVE, then CANCELED_WITH_ACCESS, then first
+  const best = subs.find(s => s.accessStatus === 'ACTIVE')
+    || subs.find(s => s.accessStatus === 'CANCELED_WITH_ACCESS')
+    || subs[0];
 
-  // Show banner
+  STATE.allSubs  = subs;
+  STATE.activeSub = best;
+
+  renderSubscriptionSwitcher(access);
+  loadAndRenderSub(best, access);
+}
+
+function renderSubscriptionSwitcher(access) {
+  const area = qs('sub-switcher-area');
+  const subs = STATE.allSubs || [];
+
+  // Only show switcher if more than 1 subscription
+  if (subs.length <= 1) { area.innerHTML = ''; return; }
+
+  area.innerHTML = `
+    <div class="sub-switcher">
+      ${subs.map(s => {
+        const isActive  = s.subscriptionId === (STATE.activeSub || {}).subscriptionId;
+        const isBlocked = !s.canAccess;
+        const label     = s.planName
+          ? s.planName.split('–')[0].trim()
+          : s.subscriptionId.slice(-8);
+        return `<div class="sub-pill ${isActive ? 'active' : ''} ${isBlocked && !isActive ? 'blocked' : ''}"
+          onclick="switchSubscription('${s.subscriptionId}')">${label}</div>`;
+      }).join('')}
+    </div>`;
+}
+
+async function switchSubscription(subscriptionId) {
+  const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
+  if (!sub) return;
+  STATE.activeSub = sub;
+  // Clear cached data so new sub loads fresh
+  STATE.mailLog    = [];
+  STATE.planCard   = null;
+  STATE.recipients = [];
+  STATE.agents     = [];
+  renderSubscriptionSwitcher(STATE.access);
+  loadAndRenderSub(sub, STATE.access);
+}
+
+function loadAndRenderSub(sub, access) {
   renderBanner(sub);
 
-  // Route to correct screen
   if (!sub.canAccess) {
     renderBlockedSub(sub);
     return;
   }
-
   if (sub.setupRequired) {
     renderSetup(sub, access);
     return;
   }
-
-  // Full dashboard
   renderDashboard(sub, access);
 }
 
@@ -1258,44 +1313,146 @@ function renderPlanTab(sub, access) {
 }
 
 function renderRecipientsTab(sub, access) {
-  const dc = qs('dashboard-content');
-  try {
-    const recipients = STATE.recipients;
+  const dc         = qs('dashboard-content');
+  const pc         = STATE.planCard;
+  const recipients = STATE.recipients || [];
+  const maxR       = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const activeCount = recipients.filter(r => r.status === 'active').length;
+  const canAdd     = activeCount < maxR;
 
-    const listHtml = recipients.length === 0
-      ? `<div class="empty-state" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:40px">
-          <div class="empty-icon">👤</div>
-          <div class="empty-title">No recipients yet</div>
-          <div class="empty-sub">Add a recipient to start receiving mail.</div>
-        </div>`
-      : `<div class="recipient-list">
-          ${recipients.map(r => `
-            <div class="recipient-item">
-              <div class="recipient-avatar">${initials(r.name)}</div>
-              <div class="recipient-info">
-                <div class="recipient-name">${r.name || '—'}</div>
-                <div class="recipient-company">${r.companyName || r.type || ''}</div>
-              </div>
-              <div class="recipient-status">
-                <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}">${r.status}</span>
-              </div>
-            </div>`).join('')}
-        </div>`;
+  // Recipients list with add form inline
+  const recipientRows = recipients.map(r => `
+    <div class="recipient-row">
+      <div class="recipient-avatar" style="width:34px;height:34px;font-size:13px;flex-shrink:0">${initials(r.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500">${r.name}</div>
+        <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName + ' · ' : ''}${r.type || 'individual'}</div>
+      </div>
+      <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:11px">${r.status}</span>
+      ${r.status === 'active'
+        ? '<span style="font-size:11px;color:var(--ink-4);margin-left:6px">Contact staff to edit</span>'
+        : ''}
+    </div>`).join('');
 
-    dc.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div class="section-header">
-          <div class="section-title">Recipients</div>
+  const emptyHtml = recipients.length === 0
+    ? `<div style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px">
+        No recipients added yet.
+      </div>` : '';
+
+  // Add recipient form — only if under limit
+  const addHtml = canAdd ? `
+    <div class="add-recipient-row" id="add-rec-toggle-row">
+      <button class="btn btn-secondary btn-sm" onclick="showAddRecipientForm()" id="show-add-rec-btn">
+        + Add Recipient
+      </button>
+      <span style="font-size:11px;color:var(--ink-4)">${activeCount} of ${maxR} slots used</span>
+    </div>
+    <div id="add-rec-form" style="display:none;padding-top:12px;border-top:1px solid var(--border);margin-top:8px">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" id="nr-name" placeholder="Jane Smith">
         </div>
-        ${listHtml}
-      </div>`;
-
-  } catch(err) {
-    dc.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">⚠️</div>
-      <div class="empty-title">Could not load recipients</div>
-      <div class="empty-sub">${err.message}</div>
+        <div class="form-group">
+          <label>Company <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+          <input type="text" id="nr-company" placeholder="Acme Corp">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="nr-type">
+            <option value="individual">Individual</option>
+            <option value="company">Company</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Notifications</label>
+          <select id="nr-notify">
+            <option value="true">Email on arrival</option>
+            <option value="false">None</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-primary btn-sm" id="nr-submit" onclick="submitAddRecipient('${sub.planCardId}')">Add Recipient</button>
+        <button class="btn btn-secondary btn-sm" onclick="hideAddRecipientForm()">Cancel</button>
+      </div>
+    </div>` : `
+    <div style="background:var(--amber-bg);border-radius:var(--radius-sm);padding:10px 14px;font-size:12px;color:var(--amber);margin-top:8px">
+      ⚠️ Recipient limit reached (${maxR}/${maxR}). Contact us to upgrade your plan for more slots.
     </div>`;
+
+  dc.innerHTML = `
+    <div class="plan-card-grid">
+      <div class="plan-card-item">
+        <div class="plan-card-header">
+          <div>
+            <div class="plan-card-name">${pc ? pc.planName || sub.planName || 'Your Plan' : sub.planName || 'Your Plan'}</div>
+            <div class="plan-card-sub">Plan Card · ${sub.planCardId || '—'}</div>
+          </div>
+          <span class="pill scanned" style="font-size:11px">Active</span>
+        </div>
+        ${recipientRows}
+        ${emptyHtml}
+        ${addHtml}
+      </div>
+      <div style="font-size:12px;color:var(--ink-4);padding:4px 2px">
+        To edit or deactivate a recipient, please contact our staff.
+      </div>
+    </div>`;
+}
+
+function showAddRecipientForm() {
+  const form = qs('add-rec-form');
+  const btn  = qs('show-add-rec-btn');
+  if (form) form.style.display = 'block';
+  if (btn)  btn.style.display  = 'none';
+}
+function hideAddRecipientForm() {
+  const form = qs('add-rec-form');
+  const btn  = qs('show-add-rec-btn');
+  if (form) form.style.display = 'none';
+  if (btn)  btn.style.display  = 'block';
+}
+
+async function submitAddRecipient(planCardId) {
+  const name = qs('nr-name') ? qs('nr-name').value.trim() : '';
+  if (!name) { toast('Name is required', 'error'); return; }
+
+  const btn = qs('nr-submit');
+  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+
+  try {
+    const result = await apiPost({
+      action:          'addRecipient',
+      uuid:            STATE.uuid,
+      planCardId:      planCardId,
+      name:            name,
+      companyName:     qs('nr-company') ? qs('nr-company').value.trim() : '',
+      type:            qs('nr-type') ? qs('nr-type').value : 'individual',
+      notifyOnArrival: qs('nr-notify') ? qs('nr-notify').value === 'true' : true,
+      language:        'en'
+    });
+
+    if (result.status === 'ok') {
+      toast(name + ' added — pending staff activation', 'success');
+      // Update local cache
+      STATE.recipients.push({
+        recipientId: result.recipientId || 'RCP_NEW',
+        planCardId:  planCardId,
+        name:        name,
+        companyName: qs('nr-company') ? qs('nr-company').value.trim() : '',
+        type:        qs('nr-type') ? qs('nr-type').value : 'individual',
+        status:      'pending'
+      });
+      renderRecipientsTab(STATE.activeSub, STATE.access);
+    } else {
+      throw new Error(result.message || 'Failed to add recipient');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Add Recipient'; }
   }
 }
 
