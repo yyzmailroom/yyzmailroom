@@ -527,8 +527,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbyBryhTn4ajucQTDfwlLwMP
 let STATE = {
   uuid:         null,
   access:       null,
-  activeSub:    null,  // currently selected subscription
+  activeSub:    null,
   mailLog:      [],
+  planCard:     null,
+  recipients:   [],
   activeTab:    'mail',
   loading:      false
 };
@@ -990,7 +992,7 @@ function renderPendingActivation(sub, stepsHtml) {
 
 // ── Dashboard ─────────────────────────────────────────────
 async function renderDashboard(sub, access) {
-  // Render skeleton first
+  // Render shell immediately
   qs('content-area').innerHTML = `
     <div id="tabs-bar">
       <div class="tabs">
@@ -999,8 +1001,23 @@ async function renderDashboard(sub, access) {
         <div class="tab"        onclick="switchTab('recipients')" id="tab-recipients">Recipients</div>
       </div>
     </div>
-    <div class="main" id="dashboard-content"></div>`;
+    <div class="main" id="dashboard-content">
+      <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading your dashboard...</div></div>
+    </div>`;
 
+  // Fetch all data in parallel — one round trip each, all at once
+  const [mailData, planData, recipientData] = await Promise.allSettled([
+    api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`),
+    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`) : Promise.resolve(null),
+    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`) : Promise.resolve(null)
+  ]);
+
+  // Cache results
+  STATE.mailLog    = mailData.status === 'fulfilled' ? ((mailData.value.mailLog || []).filter(m => m.mailId)) : [];
+  STATE.planCard   = planData.status === 'fulfilled' && planData.value ? planData.value.planCard : null;
+  STATE.recipients = recipientData.status === 'fulfilled' && recipientData.value ? (recipientData.value.recipients || []) : [];
+
+  // Render mail tab from cache
   renderMailTab(sub, access);
 }
 
@@ -1017,17 +1034,16 @@ function switchTab(tab) {
   if (tab === 'recipients') renderRecipientsTab(sub, access);
 }
 
-async function renderMailTab(sub, access) {
+function renderMailTab(sub, access) {
   const dc = qs('dashboard-content');
-  dc.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading mail...</div></div>';
 
   try {
-    const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
-    const mailLog = (data.mailLog || []).filter(m => m.mailId);
-    STATE.mailLog = mailLog;
+    const mailLog = STATE.mailLog;
 
-    // Stats
-    const now = new Date();
+    // Stats — use real planCard limits from cache
+    const pc         = STATE.planCard;
+    const mailLimit  = pc ? (parseInt(pc.mailLimit) || 0) : 0;
+    const mailsUsed  = pc ? (parseInt(pc.mailsUsed) || 0) : 0;
     const dueSoon = mailLog.filter(m => {
       if (['shredded','discarded','picked_up','forwarded'].includes(m.status)) return false;
       const days = daysUntil(m.storageDueDate);
@@ -1035,12 +1051,8 @@ async function renderMailTab(sub, access) {
     }).length;
     const readyPickup = mailLog.filter(m => m.status === 'arrived' || m.status === 'scanned').length;
     const forwarded   = mailLog.filter(m => m.status === 'forwarded').length;
-    const total       = mailLog.length;
-
-    const mailLimit  = sub.planCardId ? 60 : 0; // Will be fetched properly in full build
-    const mailsUsed  = mailLog.filter(m => m.type === 'letter' && !m.specialCase).length;
-    const usePct     = mailLimit ? Math.min(100, Math.round(mailsUsed / mailLimit * 100)) : 0;
-    const barClass   = usePct < 60 ? 'safe' : usePct < 85 ? 'warn' : 'danger';
+    const usePct      = mailLimit ? Math.min(100, Math.round(mailsUsed / mailLimit * 100)) : 0;
+    const barClass    = usePct < 60 ? 'safe' : usePct < 85 ? 'warn' : 'danger';
 
     dc.innerHTML = `
       <div>
@@ -1126,17 +1138,9 @@ function renderMailList(mailLog, sub) {
   return `<div class="mail-list">${items}</div>`;
 }
 
-async function renderPlanTab(sub, access) {
+function renderPlanTab(sub, access) {
   const dc = qs('dashboard-content');
-
-  // Get plan card details
-  let pc = null;
-  if (sub.planCardId) {
-    try {
-      const data = await api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`);
-      pc = data.planCard;
-    } catch(e) {}
-  }
+  const pc = STATE.planCard;
 
   const mailLimit    = pc ? (parseInt(pc.mailLimit)    || 0) : 0;
   const parcelLimit  = pc ? (parseInt(pc.parcelLimit)  || 0) : 0;
@@ -1208,13 +1212,10 @@ async function renderPlanTab(sub, access) {
     </div>`;
 }
 
-async function renderRecipientsTab(sub, access) {
+function renderRecipientsTab(sub, access) {
   const dc = qs('dashboard-content');
-  dc.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div>';
-
   try {
-    const data       = await api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId || ""}`);
-    const recipients = data.recipients || [];
+    const recipients = STATE.recipients;
 
     const listHtml = recipients.length === 0
       ? `<div class="empty-state" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:40px">
