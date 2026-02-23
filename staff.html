@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YYZ Offices — Staff Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --red:        #8B1A1A;
+    --red-light:  #A52020;
+    --red-dim:    rgba(139,26,26,0.08);
+    --red-border: rgba(139,26,26,0.18);
+    --ink:        #1A1A1F;
+    --ink-2:      #3D3D45;
+    --ink-3:      #72727D;
+    --ink-4:      #A8A8B0;
+    --bg:         #F7F6F4;
+    --bg-2:       #EFEDE9;
+    --white:      #FFFFFF;
+    --border:     #E2E0DB;
+    --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-md:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+    --radius:     10px;
+    --radius-sm:  6px;
+    --green:      #1A6B3C;
+    --green-bg:   #E8F5EE;
+    --amber:      #92520A;
+    --amber-bg:   #FEF3E2;
+    --blue:       #1A4A7A;
+    --blue-bg:    #E8F0FA;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; outline: none; }
+  input, select, textarea { font-family: inherit; outline: none; }
+
+  /* ── Loading ────────────────────────────────────────── */
+  #loading-screen {
+    position: fixed; inset: 0;
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px; z-index: 9999;
+    transition: opacity 0.4s ease;
+  }
+  #loading-screen.fade-out { opacity: 0; pointer-events: none; }
+  .loading-logo { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--ink); }
+  .loading-logo span { color: var(--red); }
+  .loading-sub { font-size: 12px; color: var(--ink-4); }
+  .loading-bar { width: 120px; height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .loading-bar-fill { height: 100%; width: 0; background: var(--red); border-radius: 2px; animation: loadBar 1s ease forwards; }
+  @keyframes loadBar { to { width: 100%; } }
+
+  /* ── App ────────────────────────────────────────────── */
+  #app { display: none; flex-direction: column; height: 100vh; overflow: hidden; }
+  #app.visible { display: flex; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ── Header ─────────────────────────────────────────── */
+  .header {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 0 20px;
+    height: 52px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0; z-index: 100;
+  }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  .header-logo { font-family: 'DM Serif Display', serif; font-size: 17px; color: var(--ink); }
+  .header-logo span { color: var(--red); }
+  .staff-badge {
+    background: var(--red-dim); color: var(--red);
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 2px 8px; border-radius: 20px;
+  }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .staff-name { font-size: 12px; color: var(--ink-3); }
+  .staff-name strong { color: var(--ink); font-weight: 500; }
+
+  /* View toggle */
+  .view-toggle {
+    display: flex; gap: 2px;
+    background: var(--bg-2); border-radius: var(--radius-sm);
+    padding: 3px;
+  }
+  .view-btn {
+    padding: 4px 10px; border-radius: 5px;
+    font-size: 11px; font-weight: 500; color: var(--ink-3);
+    cursor: pointer; transition: all 0.15s;
+    background: transparent;
+  }
+  .view-btn.active { background: var(--white); color: var(--ink); box-shadow: var(--shadow); }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .workspace {
+    flex: 1; display: flex; overflow: hidden;
+  }
+
+  /* ── Split View ─────────────────────────────────────── */
+  .pane {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .pane-left {
+    width: 420px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--white);
+  }
+  .pane-right {
+    flex: 1; background: var(--bg);
+    overflow-y: auto;
+  }
+
+  /* Full views */
+  .pane-full {
+    flex: 1; overflow-y: auto;
+    background: var(--bg);
+    padding: 20px;
+  }
+
+  /* ── Pane Header ────────────────────────────────────── */
+  .pane-header {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .pane-title {
+    font-size: 12px; font-weight: 600; color: var(--ink-2);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .pane-count {
+    background: var(--red-dim); color: var(--red);
+    font-size: 11px; font-weight: 600;
+    padding: 1px 7px; border-radius: 20px;
+  }
+  .pane-count.green { background: var(--green-bg); color: var(--green); }
+
+  /* ── Task List ──────────────────────────────────────── */
+  .task-list { overflow-y: auto; flex: 1; }
+  .task-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+    position: relative;
+  }
+  .task-item:hover { background: var(--bg); }
+  .task-item.selected { background: #FEF5F5; }
+  .task-item::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+  .task-item.pri-high::before   { background: var(--red); }
+  .task-item.pri-medium::before { background: #D97706; }
+  .task-item.pri-low::before    { background: var(--ink-4); }
+  .task-item.overdue { background: #FFF8F8; }
+
+  .task-top {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .task-type {
+    font-size: 12px; font-weight: 600; color: var(--ink);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .task-type-icon { font-size: 14px; }
+  .task-right { display: flex; align-items: center; gap: 6px; }
+  .task-due {
+    font-size: 10px; color: var(--ink-4);
+  }
+  .task-due.overdue { color: var(--red); font-weight: 600; }
+  .task-notes {
+    font-size: 12px; color: var(--ink-3);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .task-client {
+    font-size: 11px; color: var(--ink-4); margin-top: 2px;
+  }
+
+  .pill {
+    display: inline-flex; align-items: center;
+    padding: 1px 7px; border-radius: 20px;
+    font-size: 10px; font-weight: 600; white-space: nowrap;
+  }
+  .pill.high   { background: #FEE8E8; color: var(--red); }
+  .pill.medium { background: var(--amber-bg); color: var(--amber); }
+  .pill.low    { background: #F0F0F5; color: var(--ink-3); }
+  .pill.overdue { background: #FEE8E8; color: var(--red); }
+  .pill.done   { background: var(--green-bg); color: var(--green); }
+  .pill.arrived     { background: var(--blue-bg); color: var(--blue); }
+  .pill.scanned     { background: var(--green-bg); color: var(--green); }
+  .pill.stored      { background: var(--amber-bg); color: var(--amber); }
+  .pill.forwarded   { background: var(--green-bg); color: var(--green); }
+  .pill.picked_up   { background: #F0F0F5; color: var(--ink-3); }
+  .pill.active-plan { background: var(--green-bg); color: var(--green); }
+
+  /* ── Task Detail ────────────────────────────────────── */
+  .task-detail {
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .detail-header { }
+  .detail-type {
+    font-size: 11px; font-weight: 600; color: var(--red);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin-bottom: 6px;
+  }
+  .detail-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px; color: var(--ink); margin-bottom: 4px;
+  }
+  .detail-sub { font-size: 13px; color: var(--ink-3); }
+  .detail-card {
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .detail-row {
+    display: flex; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row label { color: var(--ink-3); font-size: 12px; }
+  .detail-row value { font-weight: 500; color: var(--ink); }
+
+  /* ── Resolve Form ───────────────────────────────────── */
+  .resolve-form { }
+  .resolve-textarea {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--white);
+    color: var(--ink); font-size: 13px;
+    resize: vertical; min-height: 80px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .resolve-textarea:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px var(--red-dim);
+    outline: none;
+  }
+  .resolve-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* ── Log Form ───────────────────────────────────────── */
+  .log-form-wrap { padding: 16px; overflow-y: auto; flex: 1; }
+  .form-group { margin-bottom: 14px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  label {
+    display: block; font-size: 11px; font-weight: 500;
+    color: var(--ink-3); margin-bottom: 4px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  input[type=text], input[type=email], select, textarea {
+    width: 100%; padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--white);
+    color: var(--ink); font-size: 13px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--red);
+    box-shadow: 0 0 0 3px var(--red-dim);
+  }
+  input::placeholder, textarea::placeholder { color: var(--ink-4); }
+  textarea { resize: vertical; min-height: 60px; }
+
+  /* Search recipient */
+  .recipient-search-wrap { position: relative; }
+  .recipient-results {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+    z-index: 200; max-height: 200px; overflow-y: auto;
+  }
+  .recipient-result-item {
+    padding: 10px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; transition: background 0.1s;
+  }
+  .recipient-result-item:hover { background: var(--bg); }
+  .recipient-result-item:last-child { border-bottom: none; }
+  .rri-name { font-weight: 500; }
+  .rri-sub  { font-size: 11px; color: var(--ink-4); margin-top: 1px; }
+
+  /* ── Buttons ────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 6px; padding: 9px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 500;
+    transition: all 0.15s; cursor: pointer;
+  }
+  .btn-primary { background: var(--red); color: var(--white); border: 1px solid var(--red); }
+  .btn-primary:hover { background: var(--red-light); }
+  .btn-secondary { background: var(--white); color: var(--ink); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--bg); }
+  .btn-success { background: var(--green); color: var(--white); border: 1px solid var(--green); }
+  .btn-danger  { background: #C0392B; color: var(--white); border: 1px solid #C0392B; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-full { width: 100%; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-spinner {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Empty / Loading ────────────────────────────────── */
+  .empty-pane {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 8px;
+    color: var(--ink-4); text-align: center; padding: 32px;
+  }
+  .empty-icon { font-size: 28px; opacity: 0.5; }
+  .empty-title { font-size: 13px; font-weight: 500; color: var(--ink-3); }
+  .empty-sub   { font-size: 12px; }
+
+  /* ── Blocked ────────────────────────────────────────── */
+  .blocked-screen {
+    display: flex; align-items: center; justify-content: center;
+    height: 100%; padding: 24px;
+  }
+  .blocked-card {
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 40px 32px;
+    max-width: 380px; text-align: center;
+    box-shadow: var(--shadow-md);
+  }
+  .blocked-icon {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: #FEE8E8; color: var(--red);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin: 0 auto 16px;
+  }
+  .blocked-title { font-family: 'DM Serif Display', serif; font-size: 18px; margin-bottom: 8px; }
+  .blocked-msg { font-size: 13px; color: var(--ink-3); }
+
+  /* ── Toast ──────────────────────────────────────────── */
+  .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    background: var(--ink); color: var(--white);
+    padding: 10px 16px; border-radius: var(--radius-sm);
+    font-size: 13px; box-shadow: var(--shadow-md);
+    animation: toastIn 0.25s ease;
+  }
+  .toast.success { background: var(--green); }
+  .toast.error   { background: var(--red); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* ── Tabs ───────────────────────────────────────────── */
+  .nav-tabs {
+    display: flex; border-bottom: 1px solid var(--border);
+    padding: 0 16px; background: var(--white); flex-shrink: 0;
+  }
+  .nav-tab {
+    padding: 10px 14px; font-size: 12px; font-weight: 500;
+    color: var(--ink-3); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .nav-tab.active { color: var(--red); border-color: var(--red); }
+  .nav-tab:hover:not(.active) { color: var(--ink-2); }
+
+  /* ── Section ────────────────────────────────────────── */
+  .section-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-4);
+    padding: 10px 16px 6px;
+  }
+
+  /* ── Divider ────────────────────────────────────────── */
+  .form-divider {
+    font-size: 10px; font-weight: 600; color: var(--ink-4);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin: 16px 0 10px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Toggle ─────────────────────────────────────────── */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .toggle-label { font-size: 13px; color: var(--ink-2); }
+  .toggle {
+    width: 36px; height: 20px; border-radius: 20px;
+    background: var(--border); position: relative;
+    cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--green); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: white; top: 2px; left: 2px;
+    transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .toggle.on::after { transform: translateX(16px); }
+
+  /* ── Stats bar ──────────────────────────────────────── */
+  .stats-mini {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--white); flex-shrink: 0;
+  }
+  .stat-mini {
+    flex: 1; padding: 10px 12px; text-align: center;
+    border-right: 1px solid var(--border);
+  }
+  .stat-mini:last-child { border-right: none; }
+  .stat-mini-val {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px; color: var(--ink); line-height: 1;
+  }
+  .stat-mini-val.red { color: var(--red); }
+  .stat-mini-val.amber { color: var(--amber); }
+  .stat-mini-label { font-size: 10px; color: var(--ink-4); margin-top: 3px; }
+
+  @media (max-width: 700px) {
+    .pane-left { width: 100%; border-right: none; }
+    .workspace { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-screen">
+  <div class="loading-logo">YYZ<span>.</span>Offices</div>
+  <div class="loading-sub">Staff Portal</div>
+  <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+</div>
+
+<div id="app">
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">YYZ<span style="color:var(--red)">.</span>Offices</div>
+      <div class="staff-badge">Staff</div>
+    </div>
+    <div class="header-right">
+      <div class="view-toggle" id="view-toggle">
+        <button class="view-btn active" onclick="setView('split')" id="vbtn-split">⊞ Split</button>
+        <button class="view-btn" onclick="setView('tasks')"  id="vbtn-tasks">☰ Tasks</button>
+        <button class="view-btn" onclick="setView('log')"    id="vbtn-log">✏ Log Mail</button>
+      </div>
+      <div class="staff-name" id="header-name"></div>
+    </div>
+  </header>
+
+  <div id="workspace" class="workspace"></div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+const API_URL = 'PASTE_YOUR_DEPLOYED_SCRIPT_URL_HERE';
+
+let STATE = {
+  uuid:         null,
+  access:       null,
+  tasks:        [],
+  selectedTask: null,
+  view:         'split',  // split | tasks | log
+  logRecipient: null,
+  logPlanCard:  null,
+  submitting:   false
+};
+
+// ── Utils ────────────────────────────────────────────────
+function qs(id) { return document.getElementById(id); }
+function getUUID() {
+  return new URLSearchParams(window.location.search).get('uuid') || null;
+}
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-CA', { month:'short', day:'numeric', year:'numeric' });
+}
+function fmtDateTime(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-CA', { month:'short', day:'numeric' }) + ' ' +
+         new Date(d).toLocaleTimeString('en-CA', { hour:'numeric', minute:'2-digit' });
+}
+function daysUntil(d) {
+  if (!d) return null;
+  return Math.ceil((new Date(d) - new Date()) / (1000*60*60*24));
+}
+function toast(msg, type='') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  qs('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+async function api(path) {
+  const res = await fetch(API_URL + '&' + path);
+  return res.json();
+}
+async function apiPost(body) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+const TASK_META = {
+  storage_expiring:       { icon: '⏰', label: 'Storage Expiring' },
+  storage_overdue:        { icon: '🗑️', label: 'Storage Overdue' },
+  parcel_decision:        { icon: '📦', label: 'Parcel Decision' },
+  ready_to_ship:          { icon: '🚢', label: 'Ready to Ship' },
+  overage_billing:        { icon: '💰', label: 'Overage Billing' },
+  unmatched_mail:         { icon: '❓', label: 'Unmatched Mail' },
+  special_case_review:    { icon: '🔍', label: 'Special Case Review' },
+  post_termination_audit: { icon: '🏢', label: 'Post-Termination Audit' },
+  courtesy_extension_log: { icon: '📋', label: 'Extension Log' },
+  pending_setup:          { icon: '🆕', label: 'Pending Setup' },
+  id_verification_review: { icon: '🪪', label: 'ID Verification' }
+};
+
+// ── Boot ─────────────────────────────────────────────────
+async function boot() {
+  STATE.uuid = getUUID();
+  await new Promise(r => setTimeout(r, 800));
+
+  if (!STATE.uuid) { hideLoading(); showBlocked('No UUID in URL'); return; }
+
+  try {
+    const data = await api('uuid=' + encodeURIComponent(STATE.uuid));
+    STATE.access = data;
+    hideLoading();
+
+    if (data.status !== 'staff') {
+      showBlocked(data.status === 'client'
+        ? 'This portal is for staff only. Please use the client portal.'
+        : data.message || 'Access denied.');
+      return;
+    }
+
+    qs('header-name').innerHTML = `<strong>${data.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${data.role}</span>`;
+    await loadTasks();
+    renderWorkspace();
+
+  } catch(err) {
+    hideLoading();
+    showBlocked('Connection error: ' + err.message);
+  }
+}
+
+function hideLoading() {
+  const ls = qs('loading-screen');
+  ls.classList.add('fade-out');
+  setTimeout(() => ls.style.display='none', 400);
+  qs('app').classList.add('visible');
+}
+
+function showBlocked(msg) {
+  qs('app').classList.add('visible');
+  qs('workspace').innerHTML = `
+    <div class="blocked-screen">
+      <div class="blocked-card">
+        <div class="blocked-icon">🔒</div>
+        <div class="blocked-title">Access Denied</div>
+        <p class="blocked-msg">${msg}</p>
+      </div>
+    </div>`;
+}
+
+async function loadTasks() {
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getTasks`);
+    STATE.tasks = data.tasks || [];
+  } catch(e) { STATE.tasks = []; }
+}
+
+// ── View management ───────────────────────────────────────
+function setView(v) {
+  STATE.view = v;
+  ['split','tasks','log'].forEach(n => {
+    const b = qs('vbtn-' + n);
+    if (b) b.classList.toggle('active', n === v);
+  });
+  renderWorkspace();
+}
+
+function renderWorkspace() {
+  const ws = qs('workspace');
+  if (STATE.view === 'split') {
+    ws.innerHTML = `
+      <div class="pane pane-left" id="tasks-pane"></div>
+      <div class="pane pane-right" id="detail-pane"></div>`;
+    renderTasksPane();
+    renderDetailPane();
+  } else if (STATE.view === 'tasks') {
+    ws.innerHTML = `<div class="pane-full" id="tasks-full"></div>`;
+    renderTasksFull();
+  } else if (STATE.view === 'log') {
+    ws.innerHTML = `<div class="pane-full" id="log-full"></div>`;
+    renderLogForm(qs('log-full'));
+  }
+}
+
+// ── Tasks Pane (split) ────────────────────────────────────
+function renderTasksPane() {
+  const pane = qs('tasks-pane');
+  if (!pane) return;
+
+  const open   = STATE.tasks.filter(t => t.status === 'open');
+  const overdue = open.filter(t => t.overdue === 'TRUE' || t.overdue === true);
+
+  pane.innerHTML = `
+    <div class="stats-mini">
+      <div class="stat-mini">
+        <div class="stat-mini-val ${open.length > 0 ? 'red' : ''}">${open.length}</div>
+        <div class="stat-mini-label">Open Tasks</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val ${overdue.length > 0 ? 'amber' : ''}">${overdue.length}</div>
+        <div class="stat-mini-label">Overdue</div>
+      </div>
+    </div>
+    <div class="nav-tabs">
+      <div class="nav-tab active" id="ttab-open"   onclick="filterTasks('open')">Open (${open.length})</div>
+      <div class="nav-tab"        id="ttab-all"    onclick="filterTasks('all')">All</div>
+    </div>
+    <div class="task-list" id="task-list-inner"></div>`;
+
+  renderTaskList('open');
+}
+
+function filterTasks(filter) {
+  ['open','all'].forEach(f => {
+    const el = qs('ttab-' + f);
+    if (el) el.classList.toggle('active', f === filter);
+  });
+  renderTaskList(filter);
+}
+
+function renderTaskList(filter) {
+  const list = qs('task-list-inner');
+  if (!list) return;
+
+  let tasks = filter === 'open'
+    ? STATE.tasks.filter(t => t.status === 'open')
+    : STATE.tasks;
+
+  if (!tasks.length) {
+    list.innerHTML = `
+      <div class="empty-pane">
+        <div class="empty-icon">✅</div>
+        <div class="empty-title">${filter === 'open' ? 'All clear!' : 'No tasks'}</div>
+        <div class="empty-sub">Nothing to action right now.</div>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = tasks.map(task => {
+    const meta    = TASK_META[task.type] || { icon: '📌', label: task.type };
+    const isOver  = task.overdue === 'TRUE' || task.overdue === true;
+    const priClass = `pri-${task.priority}`;
+    const days    = daysUntil(task.dueDate);
+    const dueStr  = days === null ? '' : days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `Due in ${days}d`;
+    const selected = STATE.selectedTask && STATE.selectedTask.taskId === task.taskId ? 'selected' : '';
+
+    return `
+      <div class="task-item ${priClass} ${isOver ? 'overdue' : ''} ${selected}"
+           onclick="selectTask('${task.taskId}')">
+        <div class="task-top">
+          <div class="task-type">
+            <span class="task-type-icon">${meta.icon}</span>
+            ${meta.label}
+          </div>
+          <div class="task-right">
+            ${isOver ? '<span class="pill overdue">Overdue</span>' : `<span class="pill ${task.priority}">${task.priority}</span>`}
+          </div>
+        </div>
+        <div class="task-notes">${task.notes || '—'}</div>
+        <div class="task-client">${task.clientId ? '· ' + task.clientId.slice(0,8) + '...' : ''} ${task.recipientName ? '· ' + task.recipientName : ''} ${dueStr ? '· ' + dueStr : ''}</div>
+      </div>`;
+  }).join('');
+}
+
+function selectTask(taskId) {
+  STATE.selectedTask = STATE.tasks.find(t => t.taskId === taskId);
+  if (STATE.view === 'split') {
+    renderTasksPane();
+    renderDetailPane();
+  } else {
+    renderTasksFull();
+  }
+}
+
+// ── Detail Pane (split) ───────────────────────────────────
+function renderDetailPane() {
+  const pane = qs('detail-pane');
+  if (!pane) return;
+
+  if (!STATE.selectedTask) {
+    pane.innerHTML = `
+      <div class="empty-pane">
+        <div class="empty-icon">👈</div>
+        <div class="empty-title">Select a task</div>
+        <div class="empty-sub">Click any task on the left to review and action it.</div>
+      </div>`;
+    return;
+  }
+
+  const task = STATE.selectedTask;
+  const meta = TASK_META[task.type] || { icon: '📌', label: task.type };
+
+  pane.innerHTML = `
+    <div class="task-detail">
+      <div class="detail-header">
+        <div class="detail-type">${meta.icon} ${meta.label}</div>
+        <div class="detail-title">${task.recipientName || task.clientId || 'Task Detail'}</div>
+        <div class="detail-sub">${task.notes || ''}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-row">
+          <label>Task ID</label><value>${task.taskId}</value>
+        </div>
+        <div class="detail-row">
+          <label>Priority</label>
+          <value><span class="pill ${task.priority}">${task.priority}</span></value>
+        </div>
+        <div class="detail-row">
+          <label>Due Date</label>
+          <value>${fmtDate(task.dueDate) || '—'}</value>
+        </div>
+        ${task.mailId ? `<div class="detail-row"><label>Mail ID</label><value>${task.mailId}</value></div>` : ''}
+        ${task.planCardId ? `<div class="detail-row"><label>Plan Card</label><value>${task.planCardId}</value></div>` : ''}
+        ${task.clientId ? `<div class="detail-row"><label>Client</label><value>${task.clientId.slice(0,16)}...</value></div>` : ''}
+        <div class="detail-row">
+          <label>Created</label><value>${fmtDateTime(task.createdAt)}</value>
+        </div>
+      </div>
+
+      ${task.status === 'open' ? `
+      <div class="resolve-form">
+        <div class="form-divider">Resolve Task</div>
+        <textarea class="resolve-textarea" id="resolve-note" placeholder="Add a resolution note (optional)..."></textarea>
+        <div class="resolve-actions">
+          <button class="btn btn-success btn-sm" onclick="resolveTask('${task.taskId}')">
+            ✓ Mark Done
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="snoozePrompt('${task.taskId}')">
+            ⏰ Snooze
+          </button>
+        </div>
+      </div>` : `
+      <div style="padding:12px; background:var(--green-bg); border-radius:var(--radius-sm); font-size:13px; color:var(--green)">
+        ✓ Resolved by ${task.resolvedBy || '—'} · ${fmtDate(task.resolvedAt)}
+        ${task.resolutionNote ? `<br><span style="color:var(--ink-3)">${task.resolutionNote}</span>` : ''}
+      </div>`}
+
+      ${task.mailId ? `
+      <button class="btn btn-secondary btn-full btn-sm" onclick="jumpToMailLog('${task.mailId}')">
+        View Mail Log Entry →
+      </button>` : ''}
+    </div>`;
+}
+
+// ── Tasks Full View ───────────────────────────────────────
+function renderTasksFull() {
+  const el = qs('tasks-full');
+  if (!el) return;
+
+  const open = STATE.tasks.filter(t => t.status === 'open');
+
+  el.innerHTML = `
+    <div style="max-width:800px; margin:0 auto">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif; font-size:20px">${open.length} Open Tasks</div>
+        <button class="btn btn-secondary btn-sm" onclick="loadTasks().then(renderWorkspace)">↻ Refresh</button>
+      </div>
+      ${open.length === 0 ? `
+        <div class="empty-pane" style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); min-height:200px">
+          <div class="empty-icon">✅</div>
+          <div class="empty-title">All tasks cleared</div>
+        </div>` :
+        open.map(task => {
+          const meta = TASK_META[task.type] || { icon:'📌', label:task.type };
+          const isOver = task.overdue === 'TRUE' || task.overdue === true;
+          return `
+            <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px; display:flex; gap:12px; align-items:flex-start; box-shadow:var(--shadow)">
+              <div style="font-size:20px; flex-shrink:0; margin-top:2px">${meta.icon}</div>
+              <div style="flex:1; min-width:0">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">
+                  <div style="font-size:13px; font-weight:600">${meta.label}</div>
+                  <span class="pill ${isOver ? 'overdue' : task.priority}">${isOver ? 'Overdue' : task.priority}</span>
+                </div>
+                <div style="font-size:12px; color:var(--ink-3); margin-bottom:6px">${task.notes || '—'}</div>
+                <div style="font-size:11px; color:var(--ink-4)">${task.recipientName || ''} ${task.clientId ? '· ' + task.clientId.slice(0,8)+'...' : ''} · Due ${fmtDate(task.dueDate)}</div>
+              </div>
+              <div style="display:flex; gap:6px; flex-shrink:0">
+                <button class="btn btn-success btn-sm" onclick="resolveTask('${task.taskId}')">Done</button>
+                <button class="btn btn-secondary btn-sm" onclick="selectTask('${task.taskId}'); setView('split')">Detail</button>
+              </div>
+            </div>`;
+        }).join('')
+      }
+    </div>`;
+}
+
+// ── Log Form ──────────────────────────────────────────────
+function renderLogForm(container) {
+  container.innerHTML = `
+    <div style="max-width:640px; margin:0 auto">
+      <div style="font-family:'DM Serif Display',serif; font-size:20px; margin-bottom:20px">Log Incoming Mail</div>
+      <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
+
+        <div class="form-divider">Recipient</div>
+        <div class="form-group recipient-search-wrap">
+          <label>Search Recipient</label>
+          <input type="text" id="log-recipient-search" placeholder="Type name or company..." autocomplete="off"
+            oninput="searchRecipients(this.value)">
+          <div class="recipient-results" id="recipient-results" style="display:none"></div>
+        </div>
+        <div id="selected-recipient-box" style="display:none; background:var(--bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:13px; display:none">
+          <div style="font-weight:500" id="sel-rec-name"></div>
+          <div style="font-size:11px; color:var(--ink-4)" id="sel-rec-sub"></div>
+          <button style="font-size:11px; color:var(--red); background:none; margin-top:4px" onclick="clearRecipient()">✕ Clear</button>
+        </div>
+
+        <div class="form-divider">Mail Details</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type</label>
+            <select id="log-type">
+              <option value="letter">Letter / Envelope</option>
+              <option value="parcel">Parcel / Package</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Physical Location</label>
+            <input type="text" id="log-location" placeholder="e.g. Shelf A3, Bin 2">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Piece Count</label>
+            <input type="text" id="log-pieces" value="1">
+          </div>
+          <div class="form-group">
+            <label>Scan Image URL <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
+            <input type="text" id="log-scan" placeholder="https://drive.google.com/...">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Note to Client <span style="color:var(--ink-4);text-transform:none">(visible to client)</span></label>
+          <textarea id="log-note-client" placeholder="e.g. Looks like a bank statement, return address matches TD Bank..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Internal Note <span style="color:var(--ink-4);text-transform:none">(staff only)</span></label>
+          <textarea id="log-note-internal" placeholder="Internal notes..."></textarea>
+        </div>
+
+        <div class="toggle-row" style="margin-bottom:14px">
+          <span class="toggle-label">Confidential <span style="font-size:11px; color:var(--ink-4)">(blocks scan & forward)</span></span>
+          <div class="toggle" id="tog-confidential" onclick="this.classList.toggle('on')"></div>
+        </div>
+        <div class="toggle-row" style="margin-bottom:14px">
+          <span class="toggle-label">Special Case</span>
+          <div class="toggle" id="tog-special" onclick="toggleSpecial()"></div>
+        </div>
+
+        <div id="special-case-reason-wrap" style="display:none" class="form-group">
+          <label>Special Case Reason</label>
+          <input type="text" id="log-special-reason" placeholder="Explain the special case...">
+        </div>
+
+        <div id="parcel-fields" style="display:none">
+          <div class="form-divider">Parcel Details</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Estimated Weight</label>
+              <input type="text" id="log-weight" placeholder="e.g. 2.5 kg">
+            </div>
+            <div class="form-group">
+              <label>Return Address</label>
+              <input type="text" id="log-return-addr" placeholder="Sender address">
+            </div>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Oversized Pickup Required</span>
+            <div class="toggle" id="tog-oversized" onclick="this.classList.toggle('on')"></div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-full" id="log-submit-btn" onclick="submitLogMail()" style="margin-top:8px">
+          Log Mail
+        </button>
+      </div>
+    </div>`;
+
+  // Show parcel fields when type = parcel
+  qs('log-type').addEventListener('change', function() {
+    const pf = qs('parcel-fields');
+    if (pf) pf.style.display = this.value === 'parcel' ? 'block' : 'none';
+  });
+}
+
+function toggleSpecial() {
+  const tog = qs('tog-special');
+  tog.classList.toggle('on');
+  const wrap = qs('special-case-reason-wrap');
+  if (wrap) wrap.style.display = tog.classList.contains('on') ? 'block' : 'none';
+}
+
+// ── Recipient search ──────────────────────────────────────
+let _recipientCache = [];
+let _searchTimeout  = null;
+
+async function searchRecipients(query) {
+  clearTimeout(_searchTimeout);
+  const results = qs('recipient-results');
+  if (!results) return;
+
+  if (!query || query.length < 2) { results.style.display = 'none'; return; }
+
+  _searchTimeout = setTimeout(async () => {
+    try {
+      // Search plan cards for the location
+      const data = await api(`uuid=${STATE.uuid}&action=getPlanCards`);
+      const planCards = data.planCards || [];
+
+      // Simple client-side filter on what we have
+      // In production this would be a server-side recipient search
+      results.style.display = 'block';
+      results.innerHTML = planCards.length === 0
+        ? `<div class="recipient-result-item" style="color:var(--ink-4)">No recipients found</div>`
+        : planCards.slice(0, 8).map(pc => `
+            <div class="recipient-result-item" onclick="selectRecipient(${JSON.stringify({
+              planCardId:     pc.planCardId,
+              clientId:       pc.clientId,
+              subscriptionId: pc.subscriptionId,
+              name:           pc.planName,
+              status:         pc.status
+            }).replace(/"/g,'&quot;')})">
+              <div class="rri-name">${pc.planName || pc.planCardId}</div>
+              <div class="rri-sub">Plan Card: ${pc.planCardId} · ${pc.clientId ? pc.clientId.slice(0,12)+'...' : ''}</div>
+            </div>`).join('');
+
+    } catch(e) {
+      results.style.display = 'none';
+    }
+  }, 300);
+}
+
+function selectRecipient(data) {
+  STATE.logPlanCard = data;
+  const results = qs('recipient-results');
+  if (results) results.style.display = 'none';
+  const search = qs('log-recipient-search');
+  if (search) search.value = data.name || data.planCardId;
+
+  const box = qs('selected-recipient-box');
+  if (box) {
+    box.style.display = 'block';
+    qs('sel-rec-name').textContent = data.name || data.planCardId;
+    qs('sel-rec-sub').textContent  = 'Client: ' + (data.clientId || '') + ' · ' + (data.subscriptionId || '');
+  }
+}
+
+function clearRecipient() {
+  STATE.logPlanCard = null;
+  const search = qs('log-recipient-search');
+  if (search) search.value = '';
+  const box = qs('selected-recipient-box');
+  if (box) box.style.display = 'none';
+}
+
+// ── Submit log mail ───────────────────────────────────────
+async function submitLogMail() {
+  if (STATE.submitting) return;
+  const btn = qs('log-submit-btn');
+
+  const pc = STATE.logPlanCard;
+  if (!pc) { toast('Please select a recipient first', 'error'); return; }
+
+  STATE.submitting = true;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-spinner"></span> Logging...';
+
+  try {
+    const isConfidential = qs('tog-confidential').classList.contains('on');
+    const isSpecial      = qs('tog-special').classList.contains('on');
+    const isOversized    = qs('tog-oversized') ? qs('tog-oversized').classList.contains('on') : false;
+    const type           = qs('log-type').value;
+
+    const result = await apiPost({
+      action:           'logMail',
+      uuid:             STATE.uuid,
+      planCardId:       pc.planCardId,
+      clientId:         pc.clientId,
+      subscriptionId:   pc.subscriptionId,
+      locationId:       STATE.access.locationId,
+      recipientId:      '',
+      recipientName:    qs('log-recipient-search').value,
+      type:             type,
+      confidential:     isConfidential,
+      specialCase:      isSpecial,
+      specialCaseReason: isSpecial ? (qs('log-special-reason').value || '') : '',
+      physicalLocation: qs('log-location').value,
+      scanImageUrl:     qs('log-scan').value,
+      noteToClient:     qs('log-note-client').value,
+      noteInternal:     qs('log-note-internal').value,
+      pieceCount:       parseInt(qs('log-pieces').value) || 1,
+      estimatedWeight:  type === 'parcel' ? (qs('log-weight')?.value || '') : '',
+      returnAddress:    type === 'parcel' ? (qs('log-return-addr')?.value || '') : '',
+      oversizedPickup:  isOversized
+    });
+
+    if (result.status === 'ok') {
+      toast('Mail logged: ' + result.mailId, 'success');
+      // Reset form
+      renderLogForm(qs('log-full') || qs('workspace'));
+      STATE.logPlanCard = null;
+      // Refresh tasks
+      await loadTasks();
+    } else {
+      throw new Error(result.message || 'Logging failed');
+    }
+
+  } catch(err) {
+    toast(err.message, 'error');
+  } finally {
+    STATE.submitting = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Log Mail'; }
+  }
+}
+
+// ── Resolve task ──────────────────────────────────────────
+async function resolveTask(taskId) {
+  const note = qs('resolve-note') ? qs('resolve-note').value : '';
+  try {
+    const result = await apiPost({
+      action:         'resolveTask',
+      uuid:           STATE.uuid,
+      taskId:         taskId,
+      resolutionNote: note
+    });
+    if (result.status === 'ok') {
+      toast('Task resolved', 'success');
+      STATE.selectedTask = null;
+      await loadTasks();
+      renderWorkspace();
+    } else {
+      throw new Error(result.message || 'Failed');
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+  }
+}
+
+function snoozePrompt(taskId) {
+  const d = prompt('Snooze until date (YYYY-MM-DD):');
+  if (d) snoozeTask(taskId, d);
+}
+
+async function snoozeTask(taskId, until) {
+  try {
+    await apiPost({ action:'snoozeTask', uuid:STATE.uuid, taskId, snoozeUntil:until });
+    toast('Task snoozed until ' + until);
+    await loadTasks();
+    renderWorkspace();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function jumpToMailLog(mailId) {
+  toast('Mail ID: ' + mailId + ' — full mail log view coming soon.');
+}
+
+// ── Init ─────────────────────────────────────────────────
+boot();
+</script>
+</body>
+</html>
