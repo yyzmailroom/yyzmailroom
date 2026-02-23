@@ -512,11 +512,11 @@ async function api(path) {
   return res.json();
 }
 async function apiPost(body) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+  // Use GET instead of POST to avoid CORS preflight issues with Apps Script
+  const { uuid, action, ...rest } = body;
+  const data  = encodeURIComponent(JSON.stringify(rest));
+  const url   = API_URL + '&uuid=' + encodeURIComponent(uuid) + '&action=' + encodeURIComponent(action) + '&data=' + data;
+  const res   = await fetch(url);
   return res.json();
 }
 
