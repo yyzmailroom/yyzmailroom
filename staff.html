@@ -750,7 +750,16 @@ function renderTaskList(filter) {
           </div>
         </div>
         <div class="task-notes">${task.notes || '—'}</div>
-        <div class="task-client">${task.clientId ? '· ' + task.clientId.slice(0,8) + '...' : ''} ${task.recipientName ? '· ' + task.recipientName : ''} ${dueStr ? '· ' + dueStr : ''}</div>
+        <div class="task-client">
+          ${task.clientId ? '· ' + task.clientId.slice(0,8) + '...' : ''}
+          ${task.recipientName ? '· ' + task.recipientName : ''}
+          ${dueStr ? '· ' + dueStr : ''}
+          ${(task.type === 'unmatched_mail' || task.type === 'special_case_review') && task.createdAt ? (() => {
+            const ds = Math.floor((new Date() - new Date(task.createdAt)) / (1000*60*60*24));
+            const col = ds >= 20 ? 'var(--red)' : ds >= 7 ? 'var(--amber)' : 'var(--ink-4)';
+            return `<span style="color:${col};font-weight:600">· ⏱ ${ds}d in exceptions</span>`;
+          })() : ''}
+        </div>
       </div>`;
   }).join('');
 }
@@ -829,8 +838,18 @@ function renderDetailPane() {
         ${task.resolutionNote ? `<br><span style="color:var(--ink-3)">${task.resolutionNote}</span>` : ''}
       </div>`}
 
+      ${(task.type === 'unmatched_mail' || task.type === 'special_case_review') && task.mailId && task.status === 'open' ? `
+      <div style="margin-top:12px;padding:12px 14px;background:var(--amber-bg);border-radius:var(--radius-sm)">
+        <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px">⚠ Exception — needs recipient assignment</div>
+        <button class="btn btn-primary btn-sm" onclick="openAssignModal('${task.mailId}')">
+          Assign to Recipient →
+        </button>
+        <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="setView('exceptions')">
+          Go to Exceptions View
+        </button>
+      </div>` : ''}
       ${task.mailId ? `
-      <button class="btn btn-secondary btn-full btn-sm" onclick="jumpToMailLog('${task.mailId}')">
+      <button class="btn btn-secondary btn-full btn-sm" style="margin-top:8px" onclick="jumpToMailLog('${task.mailId}')">
         View Mail Log Entry →
       </button>` : ''}
     </div>`;
@@ -1099,10 +1118,14 @@ function showRecipientResults(query, results) {
       planCardId: r.planCardId, clientId: r.clientId,
       subscriptionId: r.subscriptionId, accessStatus: r.accessStatus
     }).replace(/"/g, '&quot;');
-    const dot = r.accessStatus === 'ACTIVE' ? '🟢' : '🔴';
+    const statusColor = r.accessStatus === 'ACTIVE' ? 'var(--green)' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? 'var(--amber)' : r.accessStatus === 'PAYMENT_REQUIRED' ? 'var(--red)' : r.accessStatus === 'CANCELED' ? 'var(--ink-4)' : 'var(--ink-4)';
+    const statusLabel = r.accessStatus === 'ACTIVE' ? '● Active' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? '● Access Until Period End' : r.accessStatus === 'PAYMENT_REQUIRED' ? '⛔ Payment Required' : r.accessStatus === 'CANCELED' ? '✕ Canceled' : r.accessStatus || 'Unknown';
     return `<div class="recipient-result-item" onclick="selectRecipient(${payload})">
       <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}</div>
-      <div class="rri-sub">${dot} ${r.planName || r.planCardId}</div>
+      <div class="rri-sub" style="display:flex;gap:8px;align-items:center">
+        <span>${r.planName || r.planCardId}</span>
+        <span style="font-size:10px;font-weight:600;color:${statusColor}">${statusLabel}</span>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1692,21 +1715,28 @@ function renderExceptionsList(items) {
     const isParcel = m.type === 'parcel';
     const days = m.storageDueDate ? Math.ceil((new Date(m.storageDueDate)-new Date())/(1000*60*60*24)) : null;
     const daysHtml = days!==null ? `<span style="font-size:11px;color:${days<0?'var(--red)':days<=5?'var(--amber)':'var(--ink-4)'};font-weight:600">⏰ ${days<0?Math.abs(days)+'d overdue':days+'d left'}</span>` : '';
+    // How long it's been sitting as special case
+    const loggedDate = new Date(m.loggedAt);
+    const daysStored = Math.floor((new Date() - loggedDate) / (1000*60*60*24));
+    const storedColor = daysStored >= 20 ? 'var(--red)' : daysStored >= 10 ? 'var(--amber)' : 'var(--ink-3)';
+    const storedLabel = daysStored === 0 ? 'logged today' : daysStored === 1 ? '1 day in exceptions' : `${daysStored} days in exceptions`;
+
     return `
       <div class="exc-item">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
               <span style="font-size:16px">${isParcel?'📦':'✉️'}</span>
               <span style="font-size:13px;font-weight:600">${m.mailId}</span>
               <span class="pill ${m.status}">${m.status.replace(/_/g,' ')}</span>
+              <span style="font-size:11px;font-weight:600;color:${storedColor}">⏱ ${storedLabel}</span>
               ${daysHtml}
             </div>
             <div style="font-size:13px;color:var(--ink-2);margin-bottom:2px">
-              ${m.senderName?'From: <strong>'+m.senderName+'</strong> · ':''}Logged ${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'})}
+              ${m.senderName?'From: <strong>'+m.senderName+'</strong> · ':''}Logged ${loggedDate.toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'})}
             </div>
-            <div style="font-size:12px;color:var(--amber);margin-top:4px">Reason: ${m.specialCaseReason||'No recipient matched'}</div>
-            ${m.physicalLocation?`<div style="font-size:11px;color:var(--ink-4);margin-top:2px">Location: ${m.physicalLocation}</div>`:''}
+            <div style="font-size:12px;color:var(--amber);margin-top:4px">⚠ ${m.specialCaseReason||'No recipient matched'}</div>
+            ${m.physicalLocation?`<div style="font-size:11px;color:var(--ink-4);margin-top:2px">📍 ${m.physicalLocation}</div>`:''}
           </div>
         </div>
         <div class="exc-actions">
