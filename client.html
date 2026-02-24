@@ -1248,11 +1248,14 @@ function applyMailFilter() {
 function renderMailList(mailLog, sub, statusFilter) {
   const blurred   = !sub.canAccess;
   // Merge plan card fields (forwardingEnabled, planType live on planCard, not subscription)
-  const pc        = STATE.planCard || {};
-  const planType  = (pc.planType || pc.planName || sub.planType || sub.planName || '').toLowerCase();
-  const hasScan   = planType.includes('scan');
-  const hasFwd    = pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true ||
-                    sub.forwardingEnabled === 'TRUE' || sub.forwardingEnabled === true;
+  const pc          = STATE.planCard || {};
+  // autoFeature: 'none' | 'scan' | 'ship' — from Plans sheet via buildSubAccess
+  const autoFeature = (pc.autoFeature || sub.autoFeature || 'none').toLowerCase();
+  const hasScan     = autoFeature === 'scan';
+  const hasShip     = autoFeature === 'ship';  // auto-forward (letters only, never parcels)
+  const hasFwd      = pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true ||
+                      sub.forwardingEnabled === 'TRUE' || sub.forwardingEnabled === true ||
+                      hasShip;
 
   if (!mailLog.length) return `
     <div class="card">
@@ -1307,13 +1310,18 @@ function renderMailList(mailLog, sub, statusFilter) {
           🔒 Confidential — pickup only. No scan or forward.
         </div>` : '';
 
-    // — Forwarding status
+    // — Forwarding status (parcels are NEVER auto-forwarded — pickup only)
     let fwdHtml = '';
-    if (!isConf && hasFwd && isActive) {
+    if (!isConf && !isParcel && hasShip && isActive) {
       const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth()+1);
       const monthName = nextMonth.toLocaleString('en-CA',{month:'long'});
       fwdHtml = `<div style="font-size:11px;color:var(--blue);margin-top:4px">
-        📬 Will be forwarded — first week of ${monthName}
+        📬 This letter will be forwarded — first week of ${monthName}
+      </div>`;
+    }
+    if (isParcel && isActive) {
+      fwdHtml = `<div style="font-size:11px;color:var(--amber);margin-top:4px">
+        📦 Parcel — pickup only (not forwarded)
       </div>`;
     }
     if (isFwdPend) {
@@ -1334,7 +1342,7 @@ function renderMailList(mailLog, sub, statusFilter) {
 
     // — Storage countdown (only show if item will actually be shredded)
     // Forwarding plans don't shred; scan plans do; pickup plans do
-    const willShred = !hasFwd || isConf;
+    const willShred = isParcel ? true : (!hasShip || isConf);
     let urgencyHtml = '';
     let nextAction  = '';
     if (isActive && days !== null && willShred) {
@@ -1366,14 +1374,18 @@ function renderMailList(mailLog, sub, statusFilter) {
 
     return `
       <div class="mail-item ${blurred?'blurred':''}" style="${isReleased?'opacity:0.65':''}">
-        <div class="mail-icon ${isParcel?'parcel':'letter'}">${icon}</div>
+        <div class="mail-icon ${isParcel?'parcel':'letter'}">
+          ${icon}
+          <div style="font-size:9px;font-weight:600;text-transform:uppercase;color:${isParcel?'var(--amber)':'var(--blue)'};margin-top:1px">${isParcel?'Parcel':'Mail'}</div>
+        </div>
         <div class="mail-info">
-          <div class="mail-recipient">${m.recipientName || 'Unknown'}</div>
+          <div class="mail-recipient">${m.recipientName || (m.specialCase==='TRUE'||m.specialCase===true ? '<span style="color:var(--amber)">Pending Assignment</span>' : 'Unknown')}</div>
           <div class="mail-date">
             ${fmtDateTime(m.loggedAt)}
             ${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}
           </div>
           ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
+          ${(m.specialCase==='TRUE'||m.specialCase===true) && !m.recipientName ? `<div style="font-size:11px;background:var(--amber-bg);color:var(--amber);padding:3px 8px;border-radius:4px;margin-top:4px">⚠ Our staff will assign this to your mailbox shortly.</div>` : ''}
           ${confNotice}
           ${scanHtml}
           ${fwdHtml}
@@ -1426,12 +1438,30 @@ function renderPlansTab(sub, access) {
 
   dc.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:-8px">
+        <button onclick="refreshPlanCards()" style="padding:5px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;background:var(--white);color:var(--ink-3);cursor:pointer;font-family:inherit">↻ Refresh</button>
+      </div>
       ${cardsHtml}
       <div style="text-align:center;padding:12px;font-size:12px;color:var(--ink-4);border:1px dashed var(--border);border-radius:var(--radius)">
         To cancel a plan, start a new subscription, or make other changes —
         <strong style="color:var(--ink-3)">contact us via chat support</strong>.
       </div>
     </div>`;
+}
+
+async function refreshPlanCards() {
+  const sub = STATE.activeSub;
+  if (!sub || !sub.planCardId) return;
+  try {
+    const [planData, recsData] = await Promise.all([
+      api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`),
+      api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`)
+    ]);
+    if (planData && planData.planCard) STATE.planCard = planData.planCard;
+    if (recsData && recsData.recipients) STATE.recipients = recsData.recipients;
+    renderPlansTab(sub, STATE.access);
+    toast('Plan card refreshed', 'success');
+  } catch(e) { toast('Could not refresh: ' + e.message, 'error'); }
 }
 
 function buildPlanCard(sub, pc, recipients, isLoaded) {
