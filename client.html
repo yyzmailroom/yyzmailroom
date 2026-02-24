@@ -1198,9 +1198,22 @@ function renderMailTab(sub, access) {
         </div>`;
       })();
 
+  // Virtual office address — from planCard or default
+  const voAddress = (pc && pc.locationAddress) ? pc.locationAddress
+    : '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
+
   dc.innerHTML = `
     <div>
       ${statsHtml}
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px">
+        <span style="font-size:16px">📬</span>
+        <div>
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">Your Registered Mailing Address</div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink-1);margin-top:1px">${voAddress}</div>
+        </div>
+        <button onclick="navigator.clipboard.writeText('${voAddress}').then(()=>toast('Address copied','success'))" 
+          style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 10px;font-size:11px;color:var(--ink-3);cursor:pointer">Copy</button>
+      </div>
       <div class="section-header" style="margin-bottom:12px">
         <div class="section-title">Mail Log</div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -1825,7 +1838,7 @@ function renderAgentsTab(sub, access) {
       </div>
       <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)">
         <div style="padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-3)">
-          These people are authorized to pick up your mail. They'll need to show valid ID matching what's on file.
+          These people are authorized to pick up your mail. They'll need to show valid ID prior to our staff releasing mail or parcel.
         </div>
         ${agentRows}
       </div>
