@@ -1426,7 +1426,10 @@ function renderStaffMailList(mailLog) {
             ${isForwardable
               ? `<input type="checkbox" class="fwd-checkbox" data-mailid="${m.mailId}" onchange="onForwardCheckChange()" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)">`
               : `<div style="width:16px;flex-shrink:0"></div>`}
-            <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${isParcel?'📦':'✉️'}</div>
+            <div style="width:36px;flex-shrink:0;text-align:center">
+              <div style="font-size:16px">${isParcel?'📦':'✉️'}</div>
+              <div style="font-size:9px;font-weight:600;color:${isParcel?'var(--amber)':'var(--blue)'};text-transform:uppercase">${isParcel?'Parcel':'Mail'}</div>
+            </div>
             <div style="flex:1;min-width:0">
               <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                 ${m.recipientName || '—'}
@@ -1441,6 +1444,8 @@ function renderStaffMailList(mailLog) {
               ${isActive
                 ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${safeMailId}','${safeRecip}','${safePlanCard}','${safeStatus}')">Release</button>`
                 : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
+              <button class="btn btn-secondary btn-sm" title="Edit" onclick="openEditMailModal('${safeMailId}')">✏</button>
+              <button class="btn btn-secondary btn-sm" title="Delete" style="color:var(--red)" onclick="confirmDeleteMail('${safeMailId}','${safeRecip}')">🗑</button>
             </div>
           </div>`;
       }).join('')}
@@ -2134,6 +2139,171 @@ async function deactivateRecipient(recipientId, name) {
     else throw new Error(result.message||'Failed');
   } catch(err) { toast(err.message,'error'); }
 }
+
+// ── Edit Mail Item ────────────────────────────────────────
+let _editTarget = null;
+
+async function openEditMailModal(mailIdEnc) {
+  const mailId = decodeURIComponent(mailIdEnc);
+  // Find item in cache
+  const item = (_allStaffMail || []).find(m => m.mailId === mailId);
+  if (!item) { toast('Item not found in current view — refresh first', 'error'); return; }
+  _editTarget = item;
+
+  // Remove any existing modal
+  const existing = document.getElementById('edit-mail-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-mail-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--radius);width:100%;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-md)">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div style="font-weight:600;font-size:15px">Edit Mail Item — ${item.mailId}</div>
+        <button onclick="document.getElementById('edit-mail-modal').remove()" style="background:none;font-size:18px;color:var(--ink-4)">✕</button>
+      </div>
+      <div style="padding:20px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:11px;color:var(--ink-4);background:var(--bg);padding:6px 10px;border-radius:var(--radius-sm)">
+          📅 Logged: ${fmtDateTime(item.loggedAt)} by ${item.loggedBy || '—'} &nbsp;·&nbsp; Editing does not change the log date.
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Sender Name</label>
+            <input id="em-sender" type="text" value="${item.senderName||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Type</label>
+            <select id="em-type" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+              <option value="letter" ${item.type==='letter'?'selected':''}>Letter / Envelope</option>
+              <option value="parcel" ${item.type==='parcel'?'selected':''}>Parcel / Package</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Physical Location</label>
+            <input id="em-location" type="text" value="${item.physicalLocation||''}" placeholder="e.g. Shelf A3" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Scan URL</label>
+            <input id="em-scan" type="text" value="${item.scanImageUrl||''}" placeholder="https://..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          </div>
+        </div>
+
+        <div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Note to Client</label>
+          <textarea id="em-note-client" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;resize:vertical;min-height:60px">${item.noteToClient||''}</textarea>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Internal Note</label>
+          <textarea id="em-note-internal" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;resize:vertical;min-height:60px">${item.noteInternal||''}</textarea>
+        </div>
+
+        <div style="padding-top:8px;border-top:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);margin-bottom:8px">Change Recipient</div>
+          <div class="form-group recipient-search-wrap" style="margin:0">
+            <input type="text" id="em-rec-search" placeholder="Search to change recipient…"
+              style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px"
+              oninput="searchEditRecipient(this.value)">
+            <div id="em-rec-results" class="recipient-results" style="display:none"></div>
+          </div>
+          <div id="em-rec-current" style="font-size:12px;color:var(--ink-3);margin-top:6px">
+            Current: <strong>${item.recipientName || '(none)'}</strong>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;padding-top:4px">
+          <button class="btn btn-primary" style="flex:1" onclick="saveEditMail()">Save Changes</button>
+          <button class="btn btn-secondary" onclick="document.getElementById('edit-mail-modal').remove()">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+let _editRecipient = null;
+
+function searchEditRecipient(query) {
+  if (!query || query.length < 2) { qs('em-rec-results').style.display='none'; return; }
+  const q = query.toLowerCase();
+  const hits = (_recipientCache || []).filter(r =>
+    [r.name, r.companyName, r.planCardId, r.planName].join(' ').toLowerCase().includes(q)
+  ).slice(0, 6);
+  const el = qs('em-rec-results');
+  if (!hits.length) { el.style.display='block'; el.innerHTML='<div class="recipient-result-item" style="color:var(--ink-4)">No matches</div>'; return; }
+  el.style.display = 'block';
+  el.innerHTML = hits.map(r => {
+    const payload = JSON.stringify(r).replace(/"/g,'&quot;');
+    return `<div class="recipient-result-item" onclick="selectEditRecipient(${payload})">
+      <div class="rri-name">${r.name}</div>
+      <div class="rri-sub" style="font-size:10px">${r.planName||r.planCardId}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectEditRecipient(data) {
+  _editRecipient = data;
+  const el = qs('em-rec-search');
+  if (el) el.value = data.name;
+  const cur = qs('em-rec-current');
+  if (cur) cur.innerHTML = `Current: <strong>${(_editTarget||{}).recipientName||'(none)'}</strong> → <strong style="color:var(--green)">${data.name}</strong>`;
+  const res = qs('em-rec-results');
+  if (res) res.style.display = 'none';
+}
+
+async function saveEditMail() {
+  if (!_editTarget) return;
+  const updates = {
+    action:           'editMailItem',
+    uuid:             STATE.uuid,
+    mailId:           _editTarget.mailId,
+    senderName:       qs('em-sender')?.value?.trim()        || _editTarget.senderName || '',
+    type:             qs('em-type')?.value                  || _editTarget.type,
+    physicalLocation: qs('em-location')?.value?.trim()      || '',
+    scanImageUrl:     qs('em-scan')?.value?.trim()          || '',
+    noteToClient:     qs('em-note-client')?.value?.trim()   || '',
+    noteInternal:     qs('em-note-internal')?.value?.trim() || ''
+  };
+  if (_editRecipient) {
+    updates.recipientId    = _editRecipient.recipientId;
+    updates.recipientName  = _editRecipient.name;
+    updates.planCardId     = _editRecipient.planCardId;
+    updates.clientId       = _editRecipient.clientId;
+    updates.subscriptionId = _editRecipient.subscriptionId;
+  }
+  try {
+    const result = await apiPost(updates);
+    if (result.status === 'ok') {
+      toast('Mail item updated', 'success');
+      document.getElementById('edit-mail-modal')?.remove();
+      _editTarget = null; _editRecipient = null;
+      await loadStaffMailLog();
+    } else throw new Error(result.message || 'Failed');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Delete Mail Item ──────────────────────────────────────
+async function confirmDeleteMail(mailIdEnc, recipNameEnc) {
+  const mailId    = decodeURIComponent(mailIdEnc);
+  const recipName = decodeURIComponent(recipNameEnc);
+  const pin = prompt(`⚠️ Delete mail item for "${recipName}"?\n\nThis cannot be undone. Enter staff PIN to confirm:`);
+  if (pin === null) return;
+  if (pin !== '1234') { toast('Incorrect PIN — deletion cancelled', 'error'); return; }
+  try {
+    const result = await apiPost({ action: 'deleteMailItem', uuid: STATE.uuid, mailId, pin });
+    if (result.status === 'ok') {
+      toast('Mail item deleted', 'success');
+      await loadStaffMailLog();
+    } else throw new Error(result.message || 'Failed');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Refresh Plan Cards (staff) ────────────────────────────
+async function refreshPlanCardsView() {
+  toast('Refreshing…', 'success');
+  await loadPlanCardsView();
+}
+
 
 
 // ── Init ─────────────────────────────────────────────────
