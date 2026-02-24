@@ -850,7 +850,8 @@ function renderTasksFull() {
   const el = qs('tasks-full');
   if (!el) return;
 
-  const open = STATE.tasks.filter(t => t.status === 'open');
+  const EXCL = ['unmatched_mail','special_case_review'];
+  const open = STATE.tasks.filter(t => t.status === 'open' && !EXCL.includes(t.type));
 
   el.innerHTML = `
     <div style="max-width:800px; margin:0 auto">
@@ -1304,54 +1305,59 @@ function jumpToMailLog(mailId) {
 // ── Staff Mail Log View ───────────────────────────────────
 async function renderStaffMailLog(container) {
   container.innerHTML = `
-    <div style="max-width:900px;margin:0 auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div style="max-width:960px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="font-family:'DM Serif Display',serif;font-size:20px">Mail Log</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ml-search" placeholder="Search recipient or sender..."
-            style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:220px;font-family:inherit"
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="ml-search" placeholder="Search name, sender, ID..."
+            style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:200px;font-family:inherit"
             oninput="filterStaffMailLog(this.value)">
-          <select id="ml-status-filter" onchange="filterStaffMailLog(qs('ml-search').value)"
-            style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit">
-            <option value="">All Status</option>
-            <option value="arrived">Arrived</option>
-            <option value="scanned">Scanned</option>
-            <option value="stored">Stored</option>
-            <option value="forwarded">Forwarded</option>
-            <option value="picked_up">Picked Up</option>
-            <option value="shredded">Shredded</option>
-          </select>
+          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--white)">
+            <button id="mlv-active"   onclick="setMailView('active')"   style="padding:6px 12px;font-size:12px;font-weight:600;border:none;background:var(--blue);color:white;cursor:pointer">Active</button>
+            <button id="mlv-all"      onclick="setMailView('all')"      style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">All</button>
+            <button id="mlv-released" onclick="setMailView('released')" style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">Released</button>
+          </div>
           <button class="btn btn-secondary btn-sm" onclick="loadStaffMailLog()">↻</button>
         </div>
       </div>
       <div id="ml-list"><div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:200px"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div></div>
     </div>`;
-
   await loadStaffMailLog();
 }
 
 let _allStaffMail = [];
+let _mailView = 'active'; // 'active' | 'all' | 'released'
+
+function setMailView(v) {
+  _mailView = v;
+  ['active','all','released'].forEach(n => {
+    const b = qs('mlv-' + n);
+    if (!b) return;
+    b.style.background = n === v ? 'var(--blue)' : 'none';
+    b.style.color       = n === v ? 'white' : 'var(--ink-3)';
+  });
+  filterStaffMailLog(qs('ml-search') ? qs('ml-search').value : '');
+}
 
 async function loadStaffMailLog() {
   const el = qs('ml-list');
   if (el) el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--ink-4);font-size:13px">Loading...</div>';
   try {
-    const data = await api(`uuid=${STATE.uuid}&action=getMailLogStaff&limit=100`);
+    const data = await api(`uuid=${STATE.uuid}&action=getMailLogStaff&limit=200`);
     _allStaffMail = data.mailLog || [];
-    renderStaffMailList(_allStaffMail);
-    toast('Mail log refreshed', 'success');
+    setMailView(_mailView);
   } catch(e) {
-    console.error('loadStaffMailLog error:', e);
-    toast('Could not refresh: ' + e.message, 'error');
-    if (qs('ml-list')) qs('ml-list').innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Failed to load. Check connection.</div>';
+    if (qs('ml-list')) qs('ml-list').innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Failed to load: ' + e.message + '</div>';
   }
 }
 
 function filterStaffMailLog(query) {
-  const status = qs('ml-status-filter') ? qs('ml-status-filter').value : '';
-  const q      = (query || '').toLowerCase();
-  const filtered = _allStaffMail.filter(m => {
-    if (status && m.status !== status) return false;
+  const q = (query || '').toLowerCase();
+  const ACTIVE_STATUSES   = ['arrived','scanned','stored','forwarding_pending'];
+  const RELEASED_STATUSES = ['picked_up','forwarded','shredded','discarded','return_to_sender'];
+  let filtered = _allStaffMail.filter(m => {
+    if (_mailView === 'active')   { if (!ACTIVE_STATUSES.includes(m.status))   return false; }
+    if (_mailView === 'released') { if (!RELEASED_STATUSES.includes(m.status)) return false; }
     if (!q) return true;
     return [m.recipientName, m.senderName, m.planCardId, m.mailId, m.physicalLocation]
       .join(' ').toLowerCase().includes(q);
@@ -1362,55 +1368,77 @@ function filterStaffMailLog(query) {
 function renderStaffMailList(mailLog) {
   const el = qs('ml-list');
   if (!el) return;
+
   if (!mailLog.length) {
-    el.innerHTML = `<div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:160px"><div class="empty-icon">📭</div><div class="empty-title">No mail found</div></div>`;
+    const emptyMsg = _mailView === 'active' ? 'No active mail — all clear!' : 'Nothing to show.';
+    const emptyIcon = _mailView === 'active' ? '✅' : '📭';
+    el.innerHTML = `<div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:160px"><div class="empty-icon">${emptyIcon}</div><div class="empty-title">${emptyMsg}</div></div>`;
     return;
   }
-  const statusColor = { arrived:'var(--blue)',scanned:'var(--green)',stored:'var(--amber)',forwarded:'var(--green)',picked_up:'var(--ink-3)',shredded:'var(--ink-4)',forwarding_pending:'var(--blue)',discarded:'var(--ink-4)' };
-  const hasForwardable = mailLog.some(m => m.forwardingEligible === 'TRUE' && ['arrived','scanned','stored'].includes(m.status));
+
+  const ACTIVE_STATUSES = ['arrived','scanned','stored','forwarding_pending'];
+  const statusColor = {
+    arrived:'var(--blue)', scanned:'var(--green)', stored:'var(--amber)',
+    forwarded:'var(--green)', picked_up:'var(--ink-4)', shredded:'var(--ink-4)',
+    forwarding_pending:'var(--blue)', discarded:'var(--ink-4)', return_to_sender:'var(--ink-4)'
+  };
+  const statusLabel = {
+    arrived:'Arrived', scanned:'Scanned', stored:'Stored',
+    forwarded:'Forwarded', picked_up:'Picked Up', shredded:'Shredded',
+    forwarding_pending:'Fwd Soon', discarded:'Discarded', return_to_sender:'Returned'
+  };
+
+  const hasForwardable = _mailView !== 'released' &&
+    mailLog.some(m => m.forwardingEligible === 'TRUE' && ACTIVE_STATUSES.includes(m.status));
 
   el.innerHTML = `
     ${hasForwardable ? `
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--blue-bg);border:1px solid rgba(26,74,122,0.15);border-radius:var(--radius);margin-bottom:12px">
-      <span style="font-size:12px;color:var(--blue)">📬 <strong id="fwd-count">0</strong> items selected</span>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--blue-bg);border:1px solid rgba(26,74,122,0.15);border-radius:var(--radius);margin-bottom:10px">
+      <span style="font-size:12px;color:var(--blue)">📬 <strong id="fwd-count">0</strong> selected for forwarding</span>
       <button class="btn btn-sm" style="background:var(--blue);color:white;border:none;margin-left:auto" onclick="openForwardModal()" id="fwd-btn" disabled>Forward Selected →</button>
       <button class="btn btn-secondary btn-sm" onclick="selectAllForwardable()">Select All</button>
     </div>` : ''}
     <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-      ${mailLog.map(m => {
-        const isParcel     = m.type === 'parcel';
-        const canRelease   = ['arrived','scanned','stored'].includes(m.status);
-        const isForwardable = m.forwardingEligible === 'TRUE' && canRelease;
-        const days = m.storageDueDate ? Math.ceil((new Date(m.storageDueDate)-new Date())/(1000*60*60*24)) : null;
-        const daysColor = days===null?'':days<0?'var(--red)':days<=2?'var(--red)':days<=5?'var(--amber)':'var(--ink-4)';
-        const daysLabel = days===null?'':days<0?`${Math.abs(days)}d overdue`:days===0?'Due today':`${days}d left`;
-        const daysBadge = canRelease && days!==null ? `<span style="font-size:10px;font-weight:600;color:${daysColor};margin-left:6px">⏰ ${daysLabel}</span>` : '';
-        const fwdBadge  = isForwardable ? `<span style="font-size:10px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:10px;font-weight:600;margin-left:4px">FWD</span>` : '';
-        const confBadge = (m.confidential==='TRUE'||m.confidential===true) ? `<span style="font-size:10px;background:#FFEDED;color:var(--red);padding:1px 6px;border-radius:10px;font-weight:600;margin-left:4px">CONF</span>` : '';
+      ${mailLog.map((m, idx) => {
+        const isParcel      = m.type === 'parcel';
+        const isActive      = ACTIVE_STATUSES.includes(m.status);
+        const isForwardable = m.forwardingEligible === 'TRUE' && isActive;
+        const isReleased    = !isActive;
+        const days = m.storageDueDate ? Math.ceil((new Date(m.storageDueDate) - new Date()) / (1000*60*60*24)) : null;
+        const daysColor = days === null ? '' : days < 0 ? 'var(--red)' : days <= 2 ? 'var(--red)' : days <= 5 ? 'var(--amber)' : 'var(--ink-4)';
+        const daysBadge = isActive && days !== null
+          ? `<span style="font-size:10px;font-weight:600;color:${daysColor}">⏰ ${days < 0 ? Math.abs(days)+'d over' : days+'d left'}</span>` : '';
+        const fwdBadge  = isForwardable
+          ? `<span style="font-size:10px;background:var(--blue-bg);color:var(--blue);padding:1px 6px;border-radius:10px;font-weight:600">FWD</span>` : '';
+        const confBadge = (m.confidential === 'TRUE' || m.confidential === true)
+          ? `<span style="font-size:10px;background:#FFEDED;color:var(--red);padding:1px 6px;border-radius:10px;font-weight:600">CONF</span>` : '';
+        const tempBadge = m.recipientName && m.notes && (m.notes||'').startsWith('TEMP:')
+          ? `<span style="font-size:10px;background:var(--amber-bg);color:var(--amber);padding:1px 6px;border-radius:10px;font-weight:600">TEMP</span>` : '';
         const safeMailId   = encodeURIComponent(m.mailId||'');
         const safeRecip    = encodeURIComponent(m.recipientName||'');
         const safePlanCard = encodeURIComponent(m.planCardId||'');
         const safeStatus   = encodeURIComponent(m.accessStatus||'');
+        const sc = statusColor[m.status] || 'var(--ink-3)';
+        const sl = statusLabel[m.status] || m.status;
+
         return `
-          <div class="fwd-item">
-            ${isForwardable ? `<input type="checkbox" class="fwd-checkbox" data-mailid="${m.mailId}" onchange="onForwardCheckChange()">` : `<div style="width:16px;flex-shrink:0"></div>`}
-            <div style="width:34px;height:34px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">${isParcel?'📦':'✉️'}</div>
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);${isReleased ? 'opacity:0.7;background:var(--bg)' : 'background:var(--white)'}">
+            ${isForwardable
+              ? `<input type="checkbox" class="fwd-checkbox" data-mailid="${m.mailId}" onchange="onForwardCheckChange()" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)">`
+              : `<div style="width:16px;flex-shrink:0"></div>`}
+            <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:${isParcel?'var(--amber-bg)':'var(--blue-bg)'};display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">${isParcel?'📦':'✉️'}</div>
             <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap;gap:2px">
-                ${m.recipientName||'—'}${confBadge}${fwdBadge}${daysBadge}
+              <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                ${m.recipientName || '—'}
+                ${confBadge}${fwdBadge}${tempBadge}${daysBadge}
               </div>
-              <div style="font-size:11px;color:var(--ink-4);margin-top:2px">
-                ${m.senderName?'From: '+m.senderName+' · ':''}
-                ${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})}
-                ${m.physicalLocation?' · <strong style="color:var(--ink-3)">'+m.physicalLocation+'</strong>':''}
-                ${m.trackingLink?' · <a href="'+m.trackingLink+'" target="_blank" style="color:var(--blue)">Track ↗</a>':''}
+              <div style="font-size:11px;color:var(--ink-4);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                ${m.senderName ? 'From: '+m.senderName+' · ' : ''}${new Date(m.loggedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric'})}${m.physicalLocation ? ' · 📍'+m.physicalLocation : ''}${m.trackingLink ? ' · <a href="'+m.trackingLink+'" target="_blank" style="color:var(--blue)">Track ↗</a>' : ''}
               </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-              <span style="font-size:11px;font-weight:600;color:${statusColor[m.status]||'var(--ink-3)'};background:rgba(0,0,0,0.04);padding:2px 8px;border-radius:10px;white-space:nowrap">
-                ${m.status.replace(/_/g,' ')}
-              </span>
-              ${canRelease
+            <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+              <span style="font-size:11px;font-weight:600;color:${sc};background:rgba(0,0,0,0.04);padding:2px 8px;border-radius:10px;white-space:nowrap">${sl}</span>
+              ${isActive
                 ? `<button class="btn btn-success btn-sm" onclick="openReleaseModal('${safeMailId}','${safeRecip}','${safePlanCard}','${safeStatus}')">Release</button>`
                 : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
             </div>
@@ -1418,6 +1446,7 @@ function renderStaffMailList(mailLog) {
       }).join('')}
     </div>`;
 }
+
 
 function onForwardCheckChange() {
   const checked = document.querySelectorAll('.fwd-checkbox:checked');
@@ -1693,6 +1722,33 @@ async function discardSpecialCase(mailId) {
     await loadStaffMailLog();
   } catch(e) { toast(e.message, 'error'); }
 }
+
+async function renderExceptionsView(container) {
+  container.innerHTML = `
+    <div style="max-width:900px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:'DM Serif Display',serif;font-size:20px">⚠ Exceptions</div>
+        <button class="btn btn-secondary btn-sm" onclick="loadExceptions()">↻ Refresh</button>
+      </div>
+      <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px">
+        Mail items with no matched recipient or flagged as special case. Assign to a recipient or discard.
+      </div>
+      <div id="exc-list"><div style="text-align:center;padding:40px;color:var(--ink-4)">Loading...</div></div>
+    </div>`;
+  await loadExceptions();
+}
+
+async function loadExceptions() {
+  const el = qs('exc-list');
+  if (!el) return;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getExceptions&limit=200`);
+    renderExceptionsList(data.exceptions || []);
+  } catch(e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);padding:20px">Error loading exceptions: ${e.message}</div>`;
+  }
+}
+
 
 function renderExceptionsList(items) {
   const el = qs('exc-list');
