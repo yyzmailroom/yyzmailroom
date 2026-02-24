@@ -680,7 +680,8 @@ function renderTasksPane() {
   const pane = qs('tasks-pane');
   if (!pane) return;
 
-  const open   = STATE.tasks.filter(t => t.status === 'open');
+  const EXC_TYPES = ['unmatched_mail','special_case_review'];
+  const open   = STATE.tasks.filter(t => t.status === 'open' && !EXC_TYPES.includes(t.type));
   const overdue = open.filter(t => t.overdue === 'TRUE' || t.overdue === true);
 
   pane.innerHTML = `
@@ -715,9 +716,11 @@ function renderTaskList(filter) {
   const list = qs('task-list-inner');
   if (!list) return;
 
+  // Exceptions (unmatched_mail, special_case_review) live in the Exceptions tab only
+  const EXCEPTION_TYPES = ['unmatched_mail', 'special_case_review'];
   let tasks = filter === 'open'
-    ? STATE.tasks.filter(t => t.status === 'open')
-    : STATE.tasks;
+    ? STATE.tasks.filter(t => t.status === 'open' && !EXCEPTION_TYPES.includes(t.type))
+    : STATE.tasks.filter(t => !EXCEPTION_TYPES.includes(t.type));
 
   if (!tasks.length) {
     list.innerHTML = `
@@ -754,11 +757,7 @@ function renderTaskList(filter) {
           ${task.clientId ? '· ' + task.clientId.slice(0,8) + '...' : ''}
           ${task.recipientName ? '· ' + task.recipientName : ''}
           ${dueStr ? '· ' + dueStr : ''}
-          ${(task.type === 'unmatched_mail' || task.type === 'special_case_review') && task.createdAt ? (() => {
-            const ds = Math.floor((new Date() - new Date(task.createdAt)) / (1000*60*60*24));
-            const col = ds >= 20 ? 'var(--red)' : ds >= 7 ? 'var(--amber)' : 'var(--ink-4)';
-            return `<span style="color:${col};font-weight:600">· ⏱ ${ds}d in exceptions</span>`;
-          })() : ''}
+
         </div>
       </div>`;
   }).join('');
@@ -838,16 +837,7 @@ function renderDetailPane() {
         ${task.resolutionNote ? `<br><span style="color:var(--ink-3)">${task.resolutionNote}</span>` : ''}
       </div>`}
 
-      ${(task.type === 'unmatched_mail' || task.type === 'special_case_review') && task.mailId && task.status === 'open' ? `
-      <div style="margin-top:12px;padding:12px 14px;background:var(--amber-bg);border-radius:var(--radius-sm)">
-        <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px">⚠ Exception — needs recipient assignment</div>
-        <button class="btn btn-primary btn-sm" onclick="openAssignModal('${task.mailId}')">
-          Assign to Recipient →
-        </button>
-        <button class="btn btn-secondary btn-sm" style="margin-left:6px" onclick="setView('exceptions')">
-          Go to Exceptions View
-        </button>
-      </div>` : ''}
+
       ${task.mailId ? `
       <button class="btn btn-secondary btn-full btn-sm" style="margin-top:8px" onclick="jumpToMailLog('${task.mailId}')">
         View Mail Log Entry →
@@ -1872,75 +1862,178 @@ function filterPlanCards(query) {
 
 function renderPlanCardsList(planCards) {
   const el = qs('pc-list'); if (!el) return;
-  if (!planCards.length) { el.innerHTML=`<div style="text-align:center;padding:40px;color:var(--ink-4)">No plan cards found.</div>`; return; }
+  if (!planCards.length) {
+    el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-4)">No plan cards found.</div>`;
+    return;
+  }
 
-  const statusClass = {'ACTIVE':'scanned','CANCELED_WITH_ACCESS':'warning','PAYMENT_REQUIRED':'payment_req','CANCELED':'expired'};
+  const statusInfo = {
+    'ACTIVE':               { cls:'scanned',    label:'Active',              icon:'✅' },
+    'CANCELED_WITH_ACCESS': { cls:'warning',    label:'Canceling',           icon:'⚠️' },
+    'PAYMENT_REQUIRED':     { cls:'payment_req',label:'Payment Required',    icon:'⛔' },
+    'CANCELED':             { cls:'expired',    label:'Canceled',            icon:'✕' },
+    'UNKNOWN':              { cls:'stored',     label:'Unknown',             icon:'—' }
+  };
 
-  el.innerHTML = planCards.map((pc,i) => {
-    const recs = pc.recipients||[];
-    const activeRec = recs.filter(r=>r.status==='active');
+  // Nicely format ISO dates like "2026-02-22T05:00:00.000Z"
+  function fmtPeriodDate(raw) {
+    if (!raw) return '—';
+    try {
+      return new Date(raw).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch(e) { return raw; }
+  }
+
+  el.innerHTML = planCards.map((pc, i) => {
+    const recs      = pc.recipients || [];
+    const activeRec = recs.filter(r => r.status === 'active');
+    const tempRec   = recs.filter(r => r.status === 'active' && r.notes && r.notes.startsWith('TEMP:'));
+    const si        = statusInfo[pc.accessStatus] || statusInfo['UNKNOWN'];
+    const isActive  = pc.accessStatus === 'ACTIVE' || pc.accessStatus === 'CANCELED_WITH_ACCESS';
+    const clientLabel = pc.clientName ? ` <span style="font-weight:400;color:var(--ink-3)">(${pc.clientName})</span>` : '';
+
     return `
-      <div class="pc-card">
+      <div class="pc-card" style="border-left:3px solid ${isActive ? 'var(--green)' : 'var(--red)'}">
         <div class="pc-card-header" id="pc-hdr-${i}" onclick="togglePcCard(${i})">
-          <div>
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
-              <span style="font-size:13px;font-weight:600">${pc.planName||pc.planCardId}</span>
-              <span class="pill ${statusClass[pc.accessStatus]||'stored'}" style="font-size:10px">${(pc.accessStatus||'').replace(/_/g,' ')}</span>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:600">${pc.planName||pc.planCardId}${clientLabel}</span>
+              <span class="pill ${si.cls}" style="font-size:10px">${si.icon} ${si.label}</span>
             </div>
-            <div style="font-size:11px;color:var(--ink-4)">
-              ${pc.planCardId} · ${activeRec.length} recipient${activeRec.length!==1?'s':''}
-              ${pc.forwardingEnabled==='TRUE'?' · Forwarding':''}
-              ${pc.planType&&pc.planType.toLowerCase().includes('scan')?' · Scan':''}
+            <div style="font-size:11px;color:var(--ink-4);display:flex;gap:12px;flex-wrap:wrap">
+              <span>${pc.planCardId}</span>
+              <span>${activeRec.length} recipient${activeRec.length!==1?'s':''}${tempRec.length ? ` (${tempRec.length} temp)` : ''}</span>
+              ${pc.forwardingEnabled==='TRUE' ? '<span>📬 Forwarding</span>' : ''}
+              ${pc.planType&&pc.planType.toLowerCase().includes('scan') ? '<span>🔍 Scan</span>' : ''}
             </div>
           </div>
-          <span style="color:var(--ink-4);font-size:14px" id="pc-chevron-${i}">▸</span>
+          <span style="color:var(--ink-4);font-size:14px;flex-shrink:0" id="pc-chevron-${i}">▸</span>
         </div>
+
         <div id="pc-body-${i}" style="display:none" class="pc-card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12px;color:var(--ink-3)">
-            <div>Billing: ${pc.currentPeriodStart||'—'} – ${pc.currentPeriodEnd||'—'}</div>
-            <div>Mail: ${pc.mailsUsed||0}/${pc.mailLimit||'—'} · Parcels: ${pc.parcelsUsed||0}/${pc.parcelLimit||'—'}</div>
-            ${pc.forwardingAddress?`<div style="grid-column:1/-1">Forward to: ${pc.forwardingAddress}, ${pc.forwardingCity||''} ${pc.forwardingProvince||''}</div>`:''}
+
+          <!-- Client Info -->
+          <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">Client Info</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px">
+              <span style="color:var(--ink-4)">Name</span>
+              <span style="font-weight:500">${pc.clientName || '—'}</span>
+              <span style="color:var(--ink-4)">Email</span>
+              <span>${pc.clientEmail ? `<a href="mailto:${pc.clientEmail}" style="color:var(--blue)">${pc.clientEmail}</a>` : '—'}</span>
+              <span style="color:var(--ink-4)">Phone</span>
+              <span>${pc.clientPhone || '—'}</span>
+              <span style="color:var(--ink-4)">Client ID</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--ink-4)">${pc.clientId || '—'}</span>
+              <span style="color:var(--ink-4)">Plan Card ID</span>
+              <span style="font-family:monospace;font-size:10px;color:var(--ink-4)">${pc.planCardId}</span>
+            </div>
           </div>
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">Recipients (${recs.length})</div>
-          ${recs.length===0 ? `<div style="font-size:12px;color:var(--ink-4);padding:8px 0">No recipients on file.</div>` :
+
+          <!-- Billing & Usage -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px">
+            <div style="background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px">
+              <div style="color:var(--ink-4);margin-bottom:3px">Billing Period</div>
+              <div style="font-weight:500">${fmtPeriodDate(pc.currentPeriodStart)} – ${fmtPeriodDate(pc.currentPeriodEnd)}</div>
+            </div>
+            <div style="background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px">
+              <div style="color:var(--ink-4);margin-bottom:3px">Usage</div>
+              <div style="font-weight:500">Mail: ${pc.mailsUsed||0}/${pc.mailLimit||'—'} · Parcels: ${pc.parcelsUsed||0}/${pc.parcelLimit||'—'}</div>
+            </div>
+            ${pc.forwardingAddress ? `
+            <div style="background:var(--bg);border-radius:var(--radius-sm);padding:10px 12px;grid-column:1/-1">
+              <div style="color:var(--ink-4);margin-bottom:3px">Forward to</div>
+              <div style="font-weight:500">${pc.forwardingAddress}, ${pc.forwardingCity||''} ${pc.forwardingProvince||''} ${pc.forwardingPostalCode||''}</div>
+            </div>` : ''}
+          </div>
+
+          <!-- Recipients -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">
+              Recipients (${recs.length})
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="openAddTempRecipient('${pc.planCardId}',${i})">
+              + Add Temporary
+            </button>
+          </div>
+          <div id="add-temp-${i}" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:500;color:var(--amber);margin-bottom:8px">⚡ Temporary Recipient (staff only)</div>
+            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+              <div style="flex:1;min-width:160px">
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Name *</label>
+                <input type="text" id="tmp-name-${i}" placeholder="Full name" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+              </div>
+              <div style="flex:1;min-width:100px">
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Type</label>
+                <select id="tmp-type-${i}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+                  <option value="individual">Individual</option>
+                  <option value="company">Company</option>
+                </select>
+              </div>
+              <div style="flex:1;min-width:160px">
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Notes</label>
+                <input type="text" id="tmp-notes-${i}" placeholder="e.g. Guest, courier, etc." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-primary btn-sm" onclick="submitAddTempRecipient('${pc.planCardId}',${i})">Add</button>
+                <button class="btn btn-secondary btn-sm" onclick="qs('add-temp-${i}').style.display='none'">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          ${recs.length === 0 ? `<div style="font-size:12px;color:var(--ink-4);padding:8px 0">No recipients on file.</div>` :
             recs.map(r => {
-              const safeId  = encodeURIComponent(r.recipientId);
+              const safeId   = encodeURIComponent(r.recipientId);
               const safeName = encodeURIComponent(r.name||'');
-              const safeAka  = encodeURIComponent(r.companyName||'');
+              const isTemp   = r.notes && r.notes.startsWith('TEMP:');
+              const hasMailLogged = r.hasMailLogged === 'TRUE' || r.hasMailLogged === true;
               return `
               <div class="rec-row" id="rec-row-${r.recipientId}">
-                <div style="width:30px;height:30px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0">${(r.name||'?')[0].toUpperCase()}</div>
-                <div style="flex:1;min-width:0" id="rec-display-${r.recipientId}">
-                  <div style="font-size:13px;font-weight:500">${r.name}</div>
-                  <div style="font-size:11px;color:var(--ink-4)">${r.companyName||''} · ${r.type||'individual'}</div>
+                <div style="width:30px;height:30px;border-radius:50%;background:${isTemp?'var(--amber-bg)':'var(--bg-2)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;color:${isTemp?'var(--amber)':'inherit'}">${isTemp?'T':(r.name||'?')[0].toUpperCase()}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px">
+                    ${r.name}
+                    ${isTemp ? `<span style="font-size:10px;background:var(--amber-bg);color:var(--amber);padding:1px 6px;border-radius:8px;font-weight:600">TEMP</span>` : ''}
+                    ${hasMailLogged ? `<span style="font-size:10px;color:var(--ink-4)">· has mail</span>` : ''}
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-4)">${r.type||'individual'}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
                   <span class="pill ${r.status==='active'?'scanned':'stored'}" style="font-size:10px">${r.status}</span>
-                  ${r.hasMailLogged!=='TRUE' ? `<button class="btn btn-secondary btn-sm" onclick="openEditRecipient('${safeId}','${safeName}','${safeAka}','${r.type||'individual'}')">Edit</button>` : `<span style="font-size:11px;color:var(--ink-4)">Has mail</span>`}
                   ${r.status==='active' ? `<button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deactivateRecipient('${safeId}','${safeName}')">Deactivate</button>` : ''}
                 </div>
-              </div>
-              <div id="rec-edit-${r.recipientId}" style="display:none;padding:12px;background:var(--bg);border-radius:var(--radius-sm);margin:4px 0">
-                <div class="form-row" style="margin-bottom:8px">
-                  <div><label>Name</label><input type="text" id="re-name-${r.recipientId}" value="${r.name}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px"></div>
-                  <div><label>Also known as</label><input type="text" id="re-aka-${r.recipientId}" value="${r.companyName||''}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px"></div>
-                </div>
-                <div style="margin-bottom:8px">
-                  <label>Type</label>
-                  <select id="re-type-${r.recipientId}" style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-                    <option value="individual" ${r.type==='individual'?'selected':''}>Individual</option>
-                    <option value="company" ${r.type==='company'?'selected':''}>Business/Company</option>
-                  </select>
-                </div>
-                <div style="display:flex;gap:6px">
-                  <button class="btn btn-primary btn-sm" onclick="saveRecipientEdit('${r.recipientId}')">Save</button>
-                  <button class="btn btn-secondary btn-sm" onclick="qs('rec-edit-${r.recipientId}').style.display='none'">Cancel</button>
-                </div>
-              </div>`}).join('')}
+              </div>`;
+            }).join('')}
         </div>
       </div>`;
   }).join('');
 }
+
+function openAddTempRecipient(planCardId, i) {
+  const wrap = qs('add-temp-' + i);
+  if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitAddTempRecipient(planCardId, i) {
+  const nameEl  = qs('tmp-name-'  + i);
+  const typeEl  = qs('tmp-type-'  + i);
+  const notesEl = qs('tmp-notes-' + i);
+  if (!nameEl || !nameEl.value.trim()) { toast('Name is required', 'error'); return; }
+  try {
+    const result = await apiPost({
+      action:     'addTempRecipient',
+      uuid:       STATE.uuid,
+      planCardId,
+      name:       nameEl.value.trim(),
+      type:       typeEl ? typeEl.value : 'individual',
+      notes:      notesEl ? notesEl.value.trim() : ''
+    });
+    if (result.status === 'ok') {
+      toast('Temporary recipient added', 'success');
+      qs('add-temp-' + i).style.display = 'none';
+      await loadPlanCardsView();
+    } else throw new Error(result.message || 'Failed');
+  } catch(err) { toast(err.message, 'error'); }
+}
+
 
 function togglePcCard(i) {
   const body=qs('pc-body-'+i), chevron=qs('pc-chevron-'+i), header=qs('pc-hdr-'+i);
