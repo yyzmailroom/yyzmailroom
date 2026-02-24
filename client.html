@@ -371,6 +371,16 @@
   }
   @keyframes spin  { to { transform: rotate(360deg); } }
   @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
+  .spin-active { animation: spin 0.7s linear infinite; display:inline-block; }
+  @keyframes shimmer { 0%{background-position:-600px 0} 100%{background-position:600px 0} }
+  .shimmer-line {
+    height: 13px; border-radius: 6px; margin-bottom: 10px;
+    background: linear-gradient(90deg, var(--bg-2) 25%, rgba(255,255,255,0.06) 50%, var(--bg-2) 75%);
+    background-size: 1200px 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  .shimmer-line.short { width: 55%; }
+  .shimmer-line.med   { width: 78%; }
 
   /* ── Steps indicator ────────────────────────────────── */
   .steps {
@@ -728,12 +738,17 @@ async function switchSubscription(subscriptionId) {
   const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
   if (!sub) return;
   STATE.activeSub = sub;
-  // Clear cached data so new sub loads fresh
-  STATE.mailLog    = [];
-  STATE.planCard   = null;
-  STATE.recipients = [];
-  STATE.agents     = [];
+  // Clear ALL cached data — each subscription is completely independent
+  STATE.mailLog      = [];
+  STATE.planCard     = null;
+  STATE.recipients   = [];
+  STATE.agents       = [];
+  STATE.allPlanCards = {};
+  _plansTabActiveSub = subscriptionId; // reset plan tab to new sub
   renderSubscriptionSwitcher(STATE.access);
+  // Show shimmer in content area while loading
+  const dc = qs('dashboard-content');
+  if (dc) dc.innerHTML = `<div style="padding:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div><div class="shimmer-line short"></div><div style="margin-top:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div></div></div>`;
   loadAndRenderSub(sub, STATE.access);
 }
 
@@ -863,6 +878,11 @@ function renderOnboardingForm(sub, access, stepsHtml) {
 
           <div class="form-divider">Business Information</div>
           <div class="form-group">
+            <label>Plan Nickname <span style="color:var(--ink-4)">(optional)</span></label>
+            <input type="text" id="ob-friendly-name" placeholder="e.g. John&apos;s Company, Landscaping LTD">
+            <div style="font-size:11px;color:var(--ink-4);margin-top:4px">A personal name for this mailbox. Shown instead of the plan name.</div>
+          </div>
+          <div class="form-group">
             <label>Business Description <span style="color:var(--ink-4)">(one sentence)</span></label>
             <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs" required>
           </div>
@@ -924,6 +944,12 @@ function renderOnboardingForm(sub, access, stepsHtml) {
             <textarea id="ob-special" placeholder="e.g. Always notify immediately, scan all mail..."></textarea>
           </div>
 
+          <div class="form-group">
+            <label>Plan Nickname <span style="color:var(--ink-4)">(optional)</span></label>
+            <input type="text" id="ob-friendly" placeholder="e.g. Main Corp, Holding Co, Client A">
+            <div style="font-size:11px;color:var(--ink-4);margin-top:4px">Give this plan a custom name — shows in your dashboard instead of the plan type.</div>
+          </div>
+
           <button type="submit" class="btn btn-primary btn-full" id="ob-submit">
             Save & Continue
           </button>
@@ -956,6 +982,7 @@ function renderOnboardingForm(sub, access, stepsHtml) {
         clientTimezone:      'America/Toronto',
         businessDescription: qs('ob-biz').value,
         referralSource:      qs('ob-referral').value,
+        friendlyName:        qs('ob-friendly-name') ? qs('ob-friendly-name').value.trim() : '',
         preferredPickupTime: qs('ob-pickup').value,
         specialInstructions: qs('ob-special').value
       });
@@ -1094,7 +1121,7 @@ async function renderDashboard(sub, access) {
     <div id="tabs-bar">
       <div class="tabs">
         <div class="tab active" onclick="switchTab('mail')"  id="tab-mail">Mail Log</div>
-        <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plans</div>
+        <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plan</div>
         <div class="tab"        onclick="switchTab('agents')" id="tab-agents">Pickup Agents</div>
       </div>
     </div>
@@ -1228,7 +1255,10 @@ function renderMailTab(sub, access) {
             <option value="picked_up">Picked Up</option>
             <option value="shredded">Shredded</option>
           </select>
-          <div class="section-action" onclick="refreshMailLog()" id="refresh-btn" style="cursor:pointer">↻</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+              <div class="section-action" onclick="refreshMailLog()" id="refresh-btn" style="cursor:pointer">↻</div>
+              <div id="mail-refresh-ts" style="font-size:10px;color:var(--ink-4)"></div>
+            </div>
         </div>
       </div>
       <div id="mail-list-container">
@@ -1459,7 +1489,10 @@ function renderPlansTab(sub, access) {
     <div style="display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${allSubs.length>1?'0':'12px'}">
         <div></div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
         <button id="plans-refresh-btn" onclick="animRefreshPlans()" style="padding:5px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;background:var(--white);color:var(--ink-3);cursor:pointer;font-family:inherit">↻ Refresh</button>
+        <div id="plans-refresh-ts" style="font-size:10px;color:var(--ink-4)"></div>
+      </div>
       </div>
       ${tabsHtml}
       ${cardHtml}
@@ -1487,6 +1520,10 @@ async function switchPlanTab(subscriptionId) {
   // If switching to a different sub than the currently loaded one, load its data
   if (subscriptionId !== (STATE.activeSub||{}).subscriptionId) {
     if (targetSub.planCardId) {
+      // Show shimmer while loading
+      const shimmerHtml = `<div style="padding:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div><div class="shimmer-line short"></div><div style="margin-top:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div></div></div>`;
+      const pcListEl = qs('pc-list') || qs('dashboard-content');
+      if (pcListEl) pcListEl.innerHTML = shimmerHtml;
       try {
         const [planData, recsData] = await Promise.all([
           api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${targetSub.planCardId}`),
@@ -1512,10 +1549,16 @@ async function switchPlanTab(subscriptionId) {
 
 async function animRefreshPlans() {
   const btn = document.getElementById('plans-refresh-btn');
-  if (btn) { btn.disabled=true; btn.innerHTML='<span class="spin-active">↻</span> Refresh'; }
-  try { await refreshPlanCards(); } finally {
-    if (btn) { btn.disabled=false; btn.innerHTML='↻ Refresh'; }
-  }
+  if (!btn || btn.disabled) return; // debounce
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spin-active">↻</span> Refresh';
+  try {
+    await refreshPlanCards();
+    const ts = document.getElementById('plans-refresh-ts');
+    if (ts) ts.textContent = 'Last refreshed ' + new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'});
+  } catch(e) { toast('Could not refresh', 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
 }
 
 async function refreshPlanCards() {
@@ -1543,11 +1586,11 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
     PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
   }[sub.accessStatus] || 'stored';
 
-  // Billing cycle from sub
   // Friendly plan name — use pc.notes if set (customer nickname), else official plan name
-  const planName = (pc && pc.notes && !pc.notes.startsWith('TEMP:'))
-    ? pc.notes.trim()
-    : (sub.planName || '—').split('–')[0].trim();
+  const officialPlanName = (sub.planName || '—').split('–')[0].trim();
+  const friendlyPlanName = (pc && pc.notes && !pc.notes.startsWith('TEMP:'))
+    ? pc.notes.trim() : null;
+  const planName = friendlyPlanName || officialPlanName;
 
   const billing = sub.interval === 'year' ? 'Annual' : 'Monthly';
 
@@ -1579,20 +1622,33 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
   const pendingR = recipients.filter(r => r.status !== 'active').length;
   const canAddR  = activeR < maxR;
 
+  const _renderClientRec = r => {
+    const isTemp = r.notes && r.notes.startsWith('TEMP:');
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+        <div style="width:30px;height:30px;border-radius:50%;background:${isTemp?'var(--amber-bg)':'var(--bg-2)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${isTemp?'var(--amber)':'var(--ink-2)'};flex-shrink:0">${isTemp?'T':initials(r.name)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;line-height:1.3">${r.name}</div>
+          <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName : r.type === 'company' ? 'Business' : 'Individual'}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:10px">${r.status === 'active' ? 'Active' : r.status === 'pending' ? 'Pending' : r.status}</span>
+        </div>
+      </div>`;
+  };
+  const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
+  const _tempRecs = recipients.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
   const recipientRows = recipients.length === 0
     ? `<div style="font-size:12px;color:var(--ink-4);padding:10px 0">No mail recipients set up yet.</div>`
-    : recipients.map(r => `
-        <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-          <div style="width:30px;height:30px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--ink-2);flex-shrink:0">${initials(r.name)}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500;line-height:1.3">${r.name}</div>
-            <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName : r.type === 'company' ? 'Business' : 'Individual'}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:10px">${r.status === 'active' ? 'Active' : r.status === 'pending' ? 'Pending' : r.status}</span>
-            ${r.status === 'active' ? '<span style="font-size:11px;color:var(--ink-4)">Contact reception to edit</span>' : ''}
-          </div>
-        </div>`).join('');
+    : [
+        _regRecs.map(_renderClientRec).join(''),
+        _tempRecs.length > 0 ? `
+          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">Temporary</div>
+            ${_tempRecs.map(_renderClientRec).join('')}
+            <div style="font-size:11px;color:var(--ink-4);margin-top:6px;padding:6px 8px;background:var(--bg-2);border-radius:6px">Temporary recipients are managed by reception. Contact us to add or remove.</div>
+          </div>` : ''
+      ].join('');
 
   const addRecipientForm = isLoaded && canAddR ? `
     <div style="margin-top:4px" id="add-rec-toggle-row-${safePcId(sub.planCardId)}">
@@ -1685,8 +1741,9 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
       <!-- Plan card header -->
       <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <div>
-          <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:2px">${sub.planName || '—'}</div>
-          <div style="font-size:12px;color:var(--ink-4)">${billing} · ${sub.planAmount ? '$' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
+          <div style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:2px">${planName}</div>
+          ${friendlyPlanName ? `<div style="font-size:11px;color:var(--ink-4);margin-bottom:1px">${officialPlanName}</div>` : ''}
+          <div style="font-size:12px;color:var(--ink-4)">${billing}${sub.planAmount ? ' · $' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
         </div>
         <span class="pill ${pillClass}" style="font-size:11px;white-space:nowrap;flex-shrink:0">${sub.accessStatus.replace(/_/g,' ')}</span>
       </div>
@@ -2096,25 +2153,30 @@ async function removeAgent(agentId, name) {
 
 
 // ── Refresh Mail Log ─────────────────────────────────────
+async function _doRefreshMailLog() {
+  const sub = STATE.activeSub;
+  const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
+  STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
+  const container = qs('mail-list-container');
+  const filter    = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
+  if (container) {
+    container.innerHTML = renderMailList(STATE.mailLog, sub, filter);
+  } else {
+    renderMailTab(sub, STATE.access);
+  }
+  const ts = qs('mail-refresh-ts');
+  if (ts) ts.textContent = 'Last refreshed ' + new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'});
+}
+
 async function refreshMailLog() {
   const btn = qs('refresh-btn');
-  if (btn) btn.textContent = '↻ Refreshing...';
-  const sub = STATE.activeSub;
-  try {
-    const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
-    STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
-    const container = qs('mail-list-container');
-    const filter    = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
-    if (container) {
-      container.innerHTML = renderMailList(STATE.mailLog, sub, filter);
-    } else {
-      renderMailTab(sub, STATE.access);
-    }
-    if (btn) btn.textContent = '↻ Refresh';
-  } catch(e) {
-    toast('Could not refresh', 'error');
-    if (btn) btn.textContent = '↻ Refresh';
-  }
+  if (!btn || btn.disabled) return; // debounce
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spin-active">↻</span>';
+  try { await _doRefreshMailLog(); }
+  catch(e) { toast('Could not refresh', 'error'); }
+  finally { btn.disabled = false; btn.innerHTML = orig; }
 }
 
 boot();
