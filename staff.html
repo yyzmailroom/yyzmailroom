@@ -863,7 +863,8 @@ function renderTasksFull() {
     <div style="max-width:800px; margin:0 auto">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px">
         <div style="font-family:'DM Serif Display',serif; font-size:20px">${open.length} Open Tasks</div>
-        <button class="btn btn-secondary btn-sm" onclick="loadTasks().then(() => renderWorkspace())">↻ Refresh</button>
+        <button id="tasks-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="tasks-last-refreshed" onclick="animRefresh('tasks-refresh-btn', () => loadTasks().then(() => renderWorkspace()))">↻ Refresh</button>
+          <span id="tasks-last-refreshed" style="font-size:11px;color:var(--ink-4);margin-left:6px"></span>
       </div>
       ${open.length === 0 ? `
         <div class="empty-pane" style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); min-height:200px">
@@ -978,9 +979,14 @@ function renderLogForm(container) {
           <div class="toggle" id="tog-special" onclick="onSpecialCaseToggle()"></div>
         </div>
 
+        <div id="special-case-name-wrap" style="display:none" class="form-group">
+          <label>Name on Envelope / Package *</label>
+          <input type="text" id="log-special-name" placeholder="As written on the mail — for physical retrieval">
+          <div style="font-size:11px;color:var(--ink-4);margin-top:4px">Enter exactly as it appears. Do not search recipients.</div>
+        </div>
         <div id="special-case-reason-wrap" style="display:none" class="form-group">
-          <label>Special Case Reason *</label>
-          <input type="text" id="log-special-reason" placeholder="Explain the special case...">
+          <label>Special Case Reason</label>
+          <input type="text" id="log-special-reason" placeholder="e.g. No matching recipient found">
         </div>
 
         <div id="parcel-fields" style="display:none">
@@ -1029,12 +1035,33 @@ function onSpecialCaseToggle() {
   const tog = qs('tog-special');
   tog.classList.toggle('on');
   const isSpecial = tog.classList.contains('on');
-  const recSection  = qs('recipient-section');
-  const specialNote = qs('special-case-note');
-  const reasonWrap  = qs('special-case-reason-wrap');
+
+  // Recipient section — hide when special case
+  const recSection   = qs('recipient-section');
+  const recDivider   = qs('recipient-divider');
+  const specialNote  = qs('special-case-note');
+  const nameWrap     = qs('special-case-name-wrap');
+  const reasonWrap   = qs('special-case-reason-wrap');
+
   if (recSection)  recSection.style.display  = isSpecial ? 'none' : 'block';
-  if (specialNote) specialNote.style.display = isSpecial ? 'block' : 'none';
+  if (recDivider)  recDivider.style.display  = isSpecial ? 'none' : 'block';
+  if (specialNote) specialNote.style.display = 'none'; // old notice hidden (name field replaces it)
+  if (nameWrap)    nameWrap.style.display    = isSpecial ? 'block' : 'none';
   if (reasonWrap)  reasonWrap.style.display  = isSpecial ? 'block' : 'none';
+
+  // Hide scan URL, note to client, confidential when special case (simplified intake)
+  const scanWrap    = qs('scan-field-wrap');
+  const noteClient  = document.querySelector('#log-note-client')?.closest('.form-group');
+  const confRow     = document.querySelector('#tog-confidential')?.closest('.toggle-row');
+  const confNotice  = qs('confidential-notice');
+  const fwdNotice   = qs('forwarding-notice');
+  if (scanWrap)   scanWrap.style.display   = isSpecial ? 'none' : '';
+  if (noteClient) noteClient.style.display = isSpecial ? 'none' : '';
+  if (confRow)    confRow.style.display    = isSpecial ? 'none' : '';
+  if (confNotice) confNotice.style.display = 'none';
+  if (fwdNotice)  fwdNotice.style.display  = 'none';
+
+  if (!isSpecial) clearRecipient();
 }
 
 function onMailTypeChange() {
@@ -1081,11 +1108,22 @@ function spinRefreshBtn(id) {
 }
 function animRefresh(btnId, asyncFn) {
   spinRefreshBtn(btnId);
-  Promise.resolve(asyncFn()).finally(() => stopRefreshBtn(btnId));
+  Promise.resolve(asyncFn()).finally(() => {
+    stopRefreshBtn(btnId);
+    const b = document.getElementById(btnId);
+    if (b && b.dataset.refreshLabel) setLastRefreshed(b.dataset.refreshLabel);
+  });
 }
 function stopRefreshBtn(id) {
   const b = document.getElementById(id) || (typeof id === 'object' ? id : null);
   if (b) { b.disabled = false; if (b.dataset.origHtml) b.innerHTML = b.dataset.origHtml; }
+}
+
+function setLastRefreshed(labelId) {
+  const el = document.getElementById(labelId);
+  if (!el) return;
+  const now = new Date();
+  el.textContent = 'Last refreshed ' + now.toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
 }
 
 let _recipientCache = null;
@@ -1185,8 +1223,23 @@ function selectRecipient(data) {
       </div>`;
     } else if (data.accessStatus === 'CANCELED_WITH_ACCESS') {
       statusHtml = `<div style="margin-top:6px;padding:6px 10px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:11px;color:var(--amber)">
-        ⚠️ Subscription canceling — still has access until period ends.
+        ⚠️ Cancelling soon — still has access until billing period ends. Logging allowed.
       </div>`;
+    }
+    // Block submit button if PAYMENT_REQUIRED or CANCELED
+    const submitBtn = qs('log-submit-btn');
+    if (data.accessStatus === 'PAYMENT_REQUIRED') {
+      statusHtml += `<div style="margin-top:6px;padding:8px 10px;background:var(--red-dim);border-radius:var(--radius-sm);font-size:11px;color:var(--red);font-weight:600">
+        ⛔ Payment Required — mail logging is blocked until payment is resolved.
+      </div>`;
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.title = 'Payment required'; }
+    } else if (data.accessStatus === 'CANCELED') {
+      statusHtml += `<div style="margin-top:6px;padding:8px 10px;background:var(--red-dim);border-radius:var(--radius-sm);font-size:11px;color:var(--red);font-weight:600">
+        ⛔ Plan Cancelled — mail logging is blocked.
+      </div>`;
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.title = 'Plan cancelled'; }
+    } else {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.title = ''; }
     }
 
     // Remove any old status div
@@ -1236,8 +1289,8 @@ async function submitLogMail() {
 
   if (!pc && !isSpecial) { toast('Please select a recipient first', 'error'); return; }
   if (isSpecial) {
-    const reason = qs('log-special-reason') ? qs('log-special-reason').value.trim() : '';
-    if (!reason) { toast('Please enter a special case reason', 'error'); return; }
+    const spName = qs('log-special-name') ? qs('log-special-name').value.trim() : '';
+    if (!spName) { toast('Please enter the recipient name from the envelope', 'error'); return; }
   }
 
   const isConfidential = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
@@ -1265,7 +1318,7 @@ async function submitLogMail() {
       subscriptionId:    isSpecial ? '' : (pc ? pc.subscriptionId : ''),
       locationId:        STATE.access.locationId,
       recipientId:       isSpecial ? '' : (pc ? pc.recipientId || '' : ''),
-      recipientName:     isSpecial ? 'SPECIAL CASE' : (pc ? pc.name || '' : ''),
+      recipientName:     isSpecial ? ((qs('log-special-name') ? qs('log-special-name').value.trim() : '') || 'SPECIAL CASE') : (pc ? pc.name || '' : ''),
       senderName:        qs('log-sender')        ? qs('log-sender').value.trim()        : '',
       type:              type,
       confidential:      isConfidential,
@@ -1354,7 +1407,8 @@ async function renderStaffMailLog(container) {
             <button id="mlv-all"      onclick="setMailView('all')"      style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">All</button>
             <button id="mlv-released" onclick="setMailView('released')" style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">Released</button>
           </div>
-          <button id="ml-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('ml-refresh-btn', loadStaffMailLog)">↻</button>
+          <button id="ml-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="ml-last-refreshed" onclick="animRefresh('ml-refresh-btn', loadStaffMailLog)">↻</button>
+          <span id="ml-last-refreshed" style="font-size:11px;color:var(--ink-4)"></span>
         </div>
       </div>
       <div id="ml-list"><div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:200px"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div></div>
@@ -1693,23 +1747,39 @@ function openMailDetail(mailId) {
         <div style="font-family:'DM Serif Display',serif;font-size:17px">${m.type === 'parcel' ? '📦' : '✉️'} Mail Detail</div>
         <button onclick="qs('mail-detail-modal').remove()" style="background:none;font-size:18px;color:var(--ink-3)">✕</button>
       </div>
-      ${[
-        ['Mail ID',     m.mailId],
-        ['Recipient',   m.recipientName],
-        ['Sender',      m.senderName || '—'],
-        ['Type',        m.type],
-        ['Status',      m.status.replace(/_/g,' ')],
-        ['Location',    m.physicalLocation || '—'],
-        ['Logged',      m.loggedAt],
-        ['Storage Due', m.storageDueDate || '—'],
-        ['Note',        m.noteToClient || '—'],
-        ['Released To', m.releasedTo || '—'],
-        ['Released At', m.releasedAt || '—'],
+      <div style="display:flex;flex-direction:column;gap:0">
+        ${[
+        ['Mail ID',           m.mailId],
+        ['Recipient',         m.recipientName || '—'],
+        ['Plan Card',         m.planCardId || '—'],
+        ['Client ID',         m.clientId || '—'],
+        ['Sender',            m.senderName || '—'],
+        ['Type',              m.type === 'parcel' ? '📦 Parcel' : '✉️ Mail / Letter'],
+        ['Status',            m.status.replace(/_/g,' ')],
+        ['Confidential',      m.confidential==='TRUE'||m.confidential===true ? '🔒 Yes' : 'No'],
+        ['Special Case',      m.specialCase==='TRUE'||m.specialCase===true ? '⚠️ Yes' : 'No'],
+        ['Special Case Reason',m.specialCaseReason || '—'],
+        ['Physical Location', m.physicalLocation || '—'],
+        ['Scan URL',          m.scanImageUrl ? '<a href="'+m.scanImageUrl+'" target="_blank" style="color:var(--blue)">View ↗</a>' : '—'],
+        ['Note to Client',    m.noteToClient || '—'],
+        ['Internal Note',     m.noteInternal || '—'],
+        ['Logged At',         m.loggedAt],
+        ['Logged By',         m.loggedBy || '—'],
+        ['Storage Start',     m.storageStartDate || '—'],
+        ['Storage Due',       m.storageDueDate || '—'],
+        ['Piece Count',       m.pieceCount || '—'],
+        ['Released To',       m.releasedTo || '—'],
+        ['Released At',       m.releasedAt || '—'],
+        ['Released By',       m.releasedBy || '—'],
+        ['Forwarding Eligible',m.forwardingEligible==='TRUE'||m.forwardingEligible===true ? 'Yes' : 'No'],
+        ['Edited At',         m.editedAt || '—'],
+        ['Edited By',         m.editedBy || '—'],
       ].map(([k,v]) => `
-        <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
-          <span style="color:var(--ink-3)">${k}</span>
-          <span style="font-weight:500;text-align:right;max-width:240px">${v}</span>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;gap:12px">
+          <span style="color:var(--ink-3);flex-shrink:0;min-width:130px">${k}</span>
+          <span style="font-weight:500;text-align:right;word-break:break-all">${v}</span>
         </div>`).join('')}
+      </div>
       <button class="btn btn-secondary btn-full" style="margin-top:16px" onclick="qs('mail-detail-modal').remove()">Close</button>
     </div>`;
 
@@ -1770,7 +1840,8 @@ async function renderExceptionsView(container) {
     <div style="max-width:900px;margin:0 auto">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div style="font-family:'DM Serif Display',serif;font-size:20px">⚠ Exceptions</div>
-        <button id="exc-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('exc-refresh-btn', loadExceptions)">↻ Refresh</button>
+        <button id="exc-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="exc-last-refreshed" onclick="animRefresh('exc-refresh-btn', loadExceptions)">↻ Refresh</button>
+          <span id="exc-last-refreshed" style="font-size:11px;color:var(--ink-4)"></span>
       </div>
       <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px">
         Mail items with no matched recipient or flagged as special case. Assign to a recipient or discard.
@@ -1931,7 +2002,8 @@ async function renderPlanCardsView(container) {
         <div style="font-family:'DM Serif Display',serif;font-size:20px">🗂 Plan Cards</div>
         <div style="display:flex;gap:8px">
           <input type="text" id="pc-search" placeholder="Search client, plan, recipient..." style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;width:240px" oninput="filterPlanCards(this.value)">
-          <button id="pc-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('pc-refresh-btn', loadPlanCardsView)">↻</button>
+          <button id="pc-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="pc-last-refreshed" onclick="animRefresh('pc-refresh-btn', loadPlanCardsView)">↻</button>
+          <span id="pc-last-refreshed" style="font-size:11px;color:var(--ink-4)"></span>
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -2105,8 +2177,11 @@ function renderPlanCardsList(planCards) {
             </div>
           </div>
 
-          ${recs.length === 0 ? `<div style="font-size:12px;color:var(--ink-4);padding:8px 0">No recipients on file.</div>` :
-            recs.map(r => {
+          ${(() => {
+            if (recs.length === 0) return '<div style="font-size:12px;color:var(--ink-4);padding:8px 0">No recipients on file.</div>';
+            const regRecs  = recs.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
+            const tempRecs = recs.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
+            const renderRec = r => {
               const safeId   = encodeURIComponent(r.recipientId);
               const safeName = encodeURIComponent(r.name||'');
               const isTemp   = r.notes && r.notes.startsWith('TEMP:');
@@ -2131,7 +2206,17 @@ function renderPlanCardsList(planCards) {
                     </button>
                 </div>
               </div>`;
-            }).join('')}
+            `;
+            };
+            return [
+              regRecs.length > 0 ? regRecs.map(renderRec).join('') : '',
+              tempRecs.length > 0 ? `
+                <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">
+                  <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--amber);margin-bottom:6px">⚡ Temporary Recipients</div>
+                  ${tempRecs.map(renderRec).join('')}
+                </div>` : ''
+            ].join('');
+          })()}
         </div>
       </div>`;
   }).join('');
@@ -2256,8 +2341,8 @@ async function openEditMailModal(mailIdEnc) {
           <div>
             <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Type</label>
             <select id="em-type" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
-              <option value="letter" ${item.type==='letter'?'selected':''}>Letter / Envelope</option>
-              <option value="parcel" ${item.type==='parcel'?'selected':''}>Parcel / Package</option>
+              <option value="letter" ${item.type==='letter'?'selected':''}>✉️ Mail / Letter</option>
+              <option value="parcel" ${item.type==='parcel'?'selected':''}>📦 Parcel / Package</option>
             </select>
           </div>
           <div>
@@ -2268,6 +2353,29 @@ async function openEditMailModal(mailIdEnc) {
             <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Scan URL</label>
             <input id="em-scan" type="text" value="${item.scanImageUrl||''}" placeholder="https://..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
           </div>
+        </div>
+
+        <!-- Confidential toggle in edit -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
+          <div>
+            <div style="font-size:13px;font-weight:500">Confidential</div>
+            <div style="font-size:11px;color:var(--ink-4)">Blocks scan &amp; forwarding — pickup only</div>
+          </div>
+          <div class="toggle ${item.confidential==='TRUE'||item.confidential===true?'on':''}" id="em-confidential" onclick="this.classList.toggle('on')"></div>
+        </div>
+
+        <!-- Special Case toggle in edit -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
+          <div>
+            <div style="font-size:13px;font-weight:500">Special Case</div>
+            <div style="font-size:11px;color:var(--ink-4)">Mark as unmatched — clears recipient assignment</div>
+          </div>
+          <div class="toggle ${item.specialCase==='TRUE'||item.specialCase===true?'on':''}" id="em-special-case" onclick="onEditSpecialCaseToggle()"></div>
+        </div>
+        <div id="em-spec-name-wrap" style="display:${item.specialCase==='TRUE'||item.specialCase===true?'block':'none'};margin-top:4px">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Name on Envelope / Package</label>
+          <input id="em-spec-name" type="text" value="${item.recipientName||''}" placeholder="Name as it appears on mail"
+            style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
         </div>
 
         <div>
@@ -2299,6 +2407,20 @@ async function openEditMailModal(mailIdEnc) {
       </div>
     </div>`;
   document.body.appendChild(modal);
+}
+
+function onEditSpecialCaseToggle() {
+  const tog = document.getElementById('em-special-case');
+  if (!tog) return;
+  tog.classList.toggle('on');
+  const isOn = tog.classList.contains('on');
+  const nameWrap = document.getElementById('em-spec-name-wrap');
+  if (nameWrap) nameWrap.style.display = isOn ? 'block' : 'none';
+  if (isOn) {
+    const cur = document.getElementById('em-rec-current');
+    if (cur) cur.innerHTML = '<span style="color:var(--amber)">⚠ Special case — recipient will be cleared on save</span>';
+    _editRecipient = null;
+  }
 }
 
 let _editRecipient = null;
@@ -2333,6 +2455,10 @@ function selectEditRecipient(data) {
 
 async function saveEditMail() {
   if (!_editTarget) return;
+  const emConf = qs('em-confidential');
+  const emSpec = qs('em-special-case');
+  const isConf = emConf && emConf.classList.contains('on');
+  const isSpec = emSpec && emSpec.classList.contains('on');
   const updates = {
     action:           'editMailItem',
     uuid:             STATE.uuid,
@@ -2342,8 +2468,18 @@ async function saveEditMail() {
     physicalLocation: qs('em-location')?.value?.trim()      || '',
     scanImageUrl:     qs('em-scan')?.value?.trim()          || '',
     noteToClient:     qs('em-note-client')?.value?.trim()   || '',
-    noteInternal:     qs('em-note-internal')?.value?.trim() || ''
+    noteInternal:     qs('em-note-internal')?.value?.trim() || '',
+    confidential:     isConf ? 'TRUE' : 'FALSE',
+    specialCase:      isSpec ? 'TRUE' : 'FALSE'
   };
+  // If special case toggled ON, clear recipient
+  if (isSpec) {
+    updates.recipientId    = '';
+    updates.recipientName  = qs('em-spec-name')?.value?.trim() || 'SPECIAL CASE';
+    updates.planCardId     = '';
+    updates.clientId       = '';
+    updates.subscriptionId = '';
+  }
   if (_editRecipient) {
     updates.recipientId    = _editRecipient.recipientId;
     updates.recipientName  = _editRecipient.name;
