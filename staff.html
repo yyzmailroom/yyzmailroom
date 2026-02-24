@@ -60,6 +60,8 @@
   .loading-bar { width: 120px; height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .loading-bar-fill { height: 100%; width: 0; background: var(--red); border-radius: 2px; animation: loadBar 1s ease forwards; }
   @keyframes loadBar { to { width: 100%; } }
+  @keyframes spinBtn { to { transform: rotate(360deg); } }
+  .spin-active { animation: spinBtn 0.7s linear infinite; display:inline-block; }
 
   /* ── App ────────────────────────────────────────────── */
   #app { display: none; flex-direction: column; height: 100vh; overflow: hidden; }
@@ -454,6 +456,10 @@
     .pane-left { width: 100%; border-right: none; }
     .workspace { flex-direction: column; }
   }
+
+  /* Refresh animation */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .refreshing { animation: spin 0.8s linear infinite; display:inline-block; }
 </style>
 </head>
 <body>
@@ -921,10 +927,15 @@ function renderLogForm(container) {
         <div class="form-row">
           <div class="form-group">
             <label>Type</label>
-            <select id="log-type" onchange="onMailTypeChange()">
-              <option value="letter">Letter / Envelope</option>
-              <option value="parcel">Parcel / Package</option>
-            </select>
+            <div style="display:flex;gap:14px;padding:4px 0">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+                <input type="radio" name="log-type-radio" id="log-type-letter" value="letter" checked onchange="onMailTypeChange()" style="accent-color:var(--blue)"> ✉️ Mail
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+                <input type="radio" name="log-type-radio" id="log-type-parcel" value="parcel" onchange="onMailTypeChange()" style="accent-color:var(--amber)"> 📦 Parcel
+              </label>
+            </div>
+            <input type="hidden" id="log-type" value="letter">
           </div>
           <div class="form-group">
             <label>Physical Location <span style="color:var(--ink-4);text-transform:none">(staff only)</span></label>
@@ -1027,6 +1038,10 @@ function onSpecialCaseToggle() {
 }
 
 function onMailTypeChange() {
+  // Sync hidden field from radio selection
+  const radio = document.querySelector('input[name="log-type-radio"]:checked');
+  const hidden = qs('log-type');
+  if (radio && hidden) hidden.value = radio.value;
   const pf = qs('parcel-fields');
   if (pf) pf.style.display = qs('log-type') && qs('log-type').value === 'parcel' ? 'block' : 'none';
   updateScanUrlRequirement();
@@ -1057,6 +1072,22 @@ function toggleSpecial() {
 let _searchTimeout = null;
 
 // Recipient cache — loaded once per session, filtered client-side
+// Animated refresh: spinRefreshBtn(id) → start, stopRefreshBtn(id) → stop
+function spinRefreshBtn(id) {
+  const b = document.getElementById(id) || (typeof id === 'object' ? id : null);
+  if (b) { b.disabled = true; b.dataset.origHtml = b.innerHTML;
+    const arrow = b.innerHTML.match(/[↻⟳↺🔄]/)?.[0] || '↻';
+    b.innerHTML = b.innerHTML.replace(/[↻⟳↺🔄]/, `<span class="spin-active">${arrow}</span>`); }
+}
+function animRefresh(btnId, asyncFn) {
+  spinRefreshBtn(btnId);
+  Promise.resolve(asyncFn()).finally(() => stopRefreshBtn(btnId));
+}
+function stopRefreshBtn(id) {
+  const b = document.getElementById(id) || (typeof id === 'object' ? id : null);
+  if (b) { b.disabled = false; if (b.dataset.origHtml) b.innerHTML = b.dataset.origHtml; }
+}
+
 let _recipientCache = null;
 let _recipientCacheTime = 0;
 const CACHE_TTL = 5 * 60 * 1000;
@@ -1093,6 +1124,7 @@ function showRecipientResults(query, results) {
   if (!results) return;
   const q    = query.toLowerCase();
   const hits = (_recipientCache || []).filter(r =>
+    r.status !== 'inactive' &&   // skip inactive recipients in log form
     [r.name, r.companyName, r.planCardId, r.planName]
       .join(' ').toLowerCase().includes(q)
   ).slice(0, 8);
@@ -1123,6 +1155,11 @@ function showRecipientResults(query, results) {
 
 
 function selectRecipient(data) {
+  // Block inactive recipients from being selected for mail logging
+  if (data.status === 'inactive') {
+    toast('⊘ This recipient is inactive — re-activate them before logging mail.', 'error');
+    return;
+  }
   STATE.logPlanCard = data;
   updateScanUrlRequirement();
   const results = qs('recipient-results');
@@ -1317,7 +1354,7 @@ async function renderStaffMailLog(container) {
             <button id="mlv-all"      onclick="setMailView('all')"      style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">All</button>
             <button id="mlv-released" onclick="setMailView('released')" style="padding:6px 12px;font-size:12px;border:none;background:none;color:var(--ink-3);cursor:pointer">Released</button>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="loadStaffMailLog()">↻</button>
+          <button id="ml-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('ml-refresh-btn', loadStaffMailLog)">↻</button>
         </div>
       </div>
       <div id="ml-list"><div class="empty-pane" style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);min-height:200px"><div class="empty-icon">⏳</div><div class="empty-title">Loading...</div></div></div>
@@ -1733,7 +1770,7 @@ async function renderExceptionsView(container) {
     <div style="max-width:900px;margin:0 auto">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
         <div style="font-family:'DM Serif Display',serif;font-size:20px">⚠ Exceptions</div>
-        <button class="btn btn-secondary btn-sm" onclick="loadExceptions()">↻ Refresh</button>
+        <button id="exc-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('exc-refresh-btn', loadExceptions)">↻ Refresh</button>
       </div>
       <div style="font-size:13px;color:var(--ink-3);margin-bottom:16px">
         Mail items with no matched recipient or flagged as special case. Assign to a recipient or discard.
@@ -1894,8 +1931,18 @@ async function renderPlanCardsView(container) {
         <div style="font-family:'DM Serif Display',serif;font-size:20px">🗂 Plan Cards</div>
         <div style="display:flex;gap:8px">
           <input type="text" id="pc-search" placeholder="Search client, plan, recipient..." style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;width:240px" oninput="filterPlanCards(this.value)">
-          <button class="btn btn-secondary btn-sm" onclick="loadPlanCardsView()">↻</button>
+          <button id="pc-refresh-btn" class="btn btn-secondary btn-sm" onclick="animRefresh('pc-refresh-btn', loadPlanCardsView)">↻</button>
         </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select id="pc-status-filter" onchange="filterPlanCards(qs('pc-search').value)"
+          style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit">
+          <option value="">All Plans</option>
+          <option value="ACTIVE">✅ Active</option>
+          <option value="PAYMENT_REQUIRED">⛔ Payment Required</option>
+          <option value="CANCELED_WITH_ACCESS">⚠️ Pending Cancellation</option>
+          <option value="CANCELED">✕ Cancelled</option>
+        </select>
       </div>
       <div id="pc-list"><div style="text-align:center;padding:40px;color:var(--ink-4)">Loading...</div></div>
     </div>`;
@@ -1914,14 +1961,30 @@ async function loadPlanCardsView() {
 }
 
 function filterPlanCards(query) {
-  const q = (query||'').toLowerCase();
-  if (!q) { renderPlanCardsList(_allPlanCards); return; }
-  renderPlanCardsList(_allPlanCards.filter(pc => {
-    return [pc.planCardId,pc.planName,pc.clientId,...(pc.recipients||[]).map(r=>r.name+' '+(r.companyName||''))].join(' ').toLowerCase().includes(q);
-  }));
+  const q      = (query||'').toLowerCase();
+  const status = qs('pc-status-filter') ? qs('pc-status-filter').value : '';
+  let filtered = _allPlanCards;
+  if (status) filtered = filtered.filter(pc => (pc.accessStatus||'') === status);
+  if (q)      filtered = filtered.filter(pc =>
+    [pc.planCardId,pc.planName,pc.clientId,pc.clientName,...(pc.recipients||[]).map(r=>r.name+' '+(r.companyName||''))].join(' ').toLowerCase().includes(q)
+  );
+  renderPlanCardsList(filtered);
 }
 
 function renderPlanCardsList(planCards) {
+  // Apply status filter
+  const filterVal = STATE.planCardFilter || 'all';
+  if (filterVal !== 'all') {
+    planCards = planCards.filter(pc => {
+      const st = (pc.accessStatus || '').toUpperCase();
+      if (filterVal === 'active')   return st === 'ACTIVE';
+      if (filterVal === 'payment')  return st === 'PAYMENT_REQUIRED';
+      if (filterVal === 'canceled') return st === 'CANCELED';
+      if (filterVal === 'pending')  return st === 'CANCELED_WITH_ACCESS';
+      return true;
+    });
+  }
+
   const el = qs('pc-list'); if (!el) return;
   if (!planCards.length) {
     el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-4)">No plan cards found.</div>`;
@@ -1986,6 +2049,8 @@ function renderPlanCardsList(planCards) {
               <span style="font-family:monospace;font-size:10px;color:var(--ink-4)">${pc.clientId || '—'}</span>
               <span style="color:var(--ink-4)">Plan Card ID</span>
               <span style="font-family:monospace;font-size:10px;color:var(--ink-4)">${pc.planCardId}</span>
+              ${pc.businessDescription ? `<span style="color:var(--ink-4)">Business</span><span style="color:var(--ink-2)">${pc.businessDescription}</span>` : ''}
+              ${pc.referralSource ? `<span style="color:var(--ink-4)">Source</span><span style="color:var(--ink-3)">${pc.referralSource}</span>` : ''}
             </div>
           </div>
 
@@ -2058,8 +2123,12 @@ function renderPlanCardsList(planCards) {
                   <div style="font-size:11px;color:var(--ink-4)">${r.type||'individual'}</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                  <span class="pill ${r.status==='active'?'scanned':'stored'}" style="font-size:10px">${r.status}</span>
-                  ${r.status==='active' ? `<button class="btn btn-secondary btn-sm" style="color:var(--red)" onclick="deactivateRecipient('${safeId}','${safeName}')">Deactivate</button>` : ''}
+                  <span class="pill ${r.status==='active'?'scanned':r.status==='inactive'?'void':'stored'}" style="font-size:10px;${r.status==='inactive'?'opacity:0.6':''}">${r.status==='inactive'?'⊘ Inactive':r.status}</span>
+                  <button class="btn btn-secondary btn-sm" 
+                      style="color:${r.status==='inactive'?'var(--green)':'var(--red)'}"
+                      onclick="${r.status==='inactive'?'reactivateRecipient':'deactivateRecipient'}('${safeId}','${safeName}')">
+                      ${r.status==='inactive'?'Re-activate':'Deactivate'}
+                    </button>
                 </div>
               </div>`;
             }).join('')}
@@ -2132,11 +2201,22 @@ async function saveRecipientEdit(recipientId) {
 }
 
 async function deactivateRecipient(recipientId, name) {
-  if (!confirm('Deactivate '+decodeURIComponent(name)+'? They will no longer receive mail.')) return;
+  if (!confirm('Deactivate '+decodeURIComponent(name)+'? They will be marked inactive and cannot be selected when logging mail.')) return;
+  await _setRecipientStatus(recipientId, 'inactive');
+}
+
+async function reactivateRecipient(recipientId, name) {
+  if (!confirm('Re-activate '+decodeURIComponent(name)+'?')) return;
+  await _setRecipientStatus(recipientId, 'active');
+}
+
+async function _setRecipientStatus(recipientId, status) {
   try {
-    const result = await apiPost({ action:'deactivateRecipient', uuid:STATE.uuid, recipientId });
-    if (result.status==='ok') { toast('Recipient deactivated','success'); await loadPlanCardsView(); }
-    else throw new Error(result.message||'Failed');
+    const result = await apiPost({ action:'updateRecipientStatus', uuid:STATE.uuid, recipientId, status });
+    if (result.status==='ok') {
+      toast(status === 'active' ? 'Recipient re-activated' : 'Recipient deactivated', 'success');
+      await loadPlanCardsView();
+    } else throw new Error(result.message||'Failed');
   } catch(err) { toast(err.message,'error'); }
 }
 
