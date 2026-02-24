@@ -1505,10 +1505,7 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
           <label>Name *</label>
           <input type="text" id="nr-name-${safePcId(sub.planCardId)}" placeholder="e.g. Jane Smith or Acme Corp">
         </div>
-        <div class="form-group">
-          <label>Also known as <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="nr-aka-${safePcId(sub.planCardId)}" placeholder="e.g. trading name, maiden name...">
-        </div>
+        
       </div>
       <div class="form-group" style="max-width:240px">
         <label>Type</label>
@@ -1674,14 +1671,13 @@ async function submitAddRecipient(planCardId, key) {
   if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
   try {
-    const akaEl  = document.getElementById('nr-aka-'  + realKey);
     const typeEl = document.getElementById('nr-type-' + realKey);
     const result = await apiPost({
       action:          'addRecipient',
       uuid:            STATE.uuid,
       planCardId:      planCardId,
       name:            name,
-      companyName:     akaEl  ? akaEl.value.trim()  : '',
+      companyName:     '',
       type:            typeEl ? typeEl.value         : 'individual',
       notifyOnArrival: true,
       language:        'en'
@@ -1691,7 +1687,7 @@ async function submitAddRecipient(planCardId, key) {
       STATE.recipients.push({
         recipientId: result.recipientId || 'RCP_NEW_' + Date.now(),
         planCardId, name,
-        companyName: akaEl ? akaEl.value.trim() : '',
+        companyName: '',
         type:        typeEl ? typeEl.value : 'individual',
         status: 'active'
       });
