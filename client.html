@@ -792,7 +792,9 @@ async function switchSubscription(subscriptionId) {
 }
 
 async function loadAndRenderSub(sub, access) {
-  renderBanner(sub);
+  // Don't show banner during onboarding — it's redundant noise
+  if (!sub.setupRequired) renderBanner(sub);
+  else { const b = qs('banner-area'); if (b) b.innerHTML = ''; }
 
   if (!sub.canAccess) {
     renderBlockedSub(sub);
@@ -950,8 +952,23 @@ function startPlanSetup(subscriptionId) {
 function renderSetup(sub, access) {
   const step = sub.setupStep;
 
+  // Hide subscription switcher tabs during entire onboarding flow
+  const switcher = qs('sub-switcher-area');
+  if (switcher) switcher.style.display = 'none';
+
   const stepIndex = { plan_setup: 0, add_recipients: 1, pending_activation: 2 };
   const currentStep = stepIndex[step] ?? 0;
+
+  // Show back button only when client has multiple plans (so they can switch)
+  const hasMultiplePlans = (STATE.allSubs || []).filter(s => s.canAccess).length > 1;
+  const backBtn = hasMultiplePlans ? `
+    <button onclick="goBackToPlanSelection()"
+      style="display:inline-flex;align-items:center;gap:5px;background:none;border:none;
+             cursor:pointer;font-size:12px;color:var(--ink-4);font-family:inherit;
+             padding:0;margin-bottom:20px;transition:color 0.15s"
+      onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink-4)'">
+      ← Back to plans
+    </button>` : '';
 
   const stepsHtml = [0,1,2].map((i, idx) => `
     <div class="step-dot ${i < currentStep ? 'done' : i === currentStep ? 'active' : ''}"></div>
@@ -959,18 +976,26 @@ function renderSetup(sub, access) {
   `).join('');
 
   if (step === 'plan_setup') {
-    renderOnboardingForm(sub, access, stepsHtml);
+    renderOnboardingForm(sub, access, stepsHtml, backBtn);
   } else if (step === 'add_recipients') {
-    renderAddRecipient(sub, access, stepsHtml);
+    renderAddRecipient(sub, access, stepsHtml, backBtn);
   } else if (step === 'pending_activation') {
-    renderPendingActivation(sub, stepsHtml);
+    renderPendingActivation(sub, stepsHtml, backBtn);
   }
 }
 
-function renderOnboardingForm(sub, access, stepsHtml) {
+function goBackToPlanSelection() {
+  // Restore switcher and go back to selection screen
+  const switcher = qs('sub-switcher-area');
+  if (switcher) switcher.style.display = 'none'; // stays hidden on selection screen
+  renderPlanSelection(STATE.access);
+}
+
+function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
+        ${backBtn}
         <div class="onboard-step">Step 1 of 3 — Plan Setup</div>
         <div class="onboard-title">Set up your mailbox</div>
         <div class="onboard-sub">Tell us a bit about yourself and where to forward your mail.</div>
@@ -1111,10 +1136,11 @@ function extractProductId(sub) {
   return sub.productId || '';
 }
 
-function renderAddRecipient(sub, access, stepsHtml) {
+function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
+        ${backBtn}
         <div class="onboard-step">Step 2 of 3 — Add Recipient</div>
         <div class="onboard-title">Who will receive mail?</div>
         <div class="onboard-sub">Add at least one recipient name. This is the name that will appear on your mail.</div>
@@ -1186,7 +1212,7 @@ function renderAddRecipient(sub, access, stepsHtml) {
   });
 }
 
-function renderPendingActivation(sub, stepsHtml) {
+function renderPendingActivation(sub, stepsHtml, backBtn = '') {
   // Check if there are other plans still pending setup
   const morePending = (STATE.allSubs || []).filter(s =>
     s.canAccess && s.setupRequired && s.subscriptionId !== sub.subscriptionId
@@ -1200,6 +1226,7 @@ function renderPendingActivation(sub, stepsHtml) {
   qs('content-area').innerHTML = `
     <div class="onboarding">
       <div class="onboard-header">
+        ${backBtn}
         <div class="onboard-step">Step 3 of 3 — Activation</div>
         <div class="onboard-title">Almost there!</div>
         <div class="onboard-sub">Our team is reviewing your mailbox setup. You'll receive a confirmation once activated.</div>
