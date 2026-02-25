@@ -1507,10 +1507,10 @@ function renderPlansTab(sub, access) {
 }
 
 function getPlanFriendlyName(s) {
-  // Use pc.notes as friendly name if set, else fall back to plan name
+  // Use pc.friendlyName if set, else fall back to official plan name
   const pc = STATE.allPlanCards && STATE.allPlanCards[s.subscriptionId];
-  const friendly = pc && pc.notes ? pc.notes.trim() : '';
-  if (friendly && !friendly.startsWith('TEMP:')) return friendly;
+  const friendly = pc && pc.friendlyName ? pc.friendlyName.trim() : '';
+  if (friendly) return friendly;
   return (s.planName || '').split('–')[0].trim() || s.subscriptionId.slice(-8);
 }
 
@@ -1589,10 +1589,9 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
     PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
   }[sub.accessStatus] || 'stored';
 
-  // Friendly plan name — use pc.notes if set (customer nickname), else official plan name
+  // Friendly plan name — use pc.friendlyName if set (customer nickname), else official plan name
   const officialPlanName = (sub.planName || '—').split('–')[0].trim();
-  const friendlyPlanName = (pc && pc.notes && !pc.notes.startsWith('TEMP:'))
-    ? pc.notes.trim() : null;
+  const friendlyPlanName = (pc && pc.friendlyName) ? pc.friendlyName.trim() : null;
   const planName = friendlyPlanName || officialPlanName;
 
   const billing = sub.interval === 'year' ? 'Annual' : 'Monthly';
@@ -1977,7 +1976,7 @@ async function saveFriendlyName(planCardId, safeId) {
     if (r.status === 'ok') {
       const display = document.getElementById('fname-display-' + safeId);
       if (display) display.textContent = name || 'Add a nickname';
-      if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.notes = name;
+      if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.friendlyName = name;
       _plansTabActiveSub = null; // force re-render tab labels
       closeFriendlyNameEdit(safeId);
       toast('Nickname ' + (name ? 'saved' : 'removed'), 'success');
