@@ -1395,3 +1395,551 @@ function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
     }
   });
 }
+
+function renderPendingActivation(sub, stepsHtml, backBtn = '') {
+  // Check if there are other plans still pending setup
+  const morePending = (STATE.allSubs || []).filter(s =>
+    s.canAccess && s.setupRequired && s.subscriptionId !== sub.subscriptionId
+  );
+  const nextBtn = morePending.length > 0 ? `
+    <button onclick="renderPlanSelection(STATE.access)"
+      style="margin-top:20px;padding:10px 24px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+      Set Up Next Plan →
+    </button>` : '';
+
+  qs('content-area').innerHTML = `
+    <div class="onboarding">
+      <div class="onboard-header">
+        ${backBtn}
+        <div class="onboard-step">Step 3 of 3 — Activation</div>
+        <div class="onboard-title">Almost there!</div>
+        <div class="onboard-sub">Our team is reviewing your mailbox setup. You'll receive a confirmation once activated.</div>
+      </div>
+      <div class="steps">${stepsHtml}</div>
+      <div class="onboard-card" style="text-align:center; padding: 40px 24px;">
+        <div style="font-size:40px; margin-bottom:16px;">⏳</div>
+        <div style="font-size:15px; font-weight:600; color:var(--ink); margin-bottom:8px;">Pending Activation</div>
+        <p style="font-size:13px; color:var(--ink-3); line-height:1.6;">
+          Your recipient has been submitted and is pending review by our team.
+          This usually takes less than one business day.
+        </p>
+        <p style="font-size:12px; color:var(--ink-4); margin-top:16px;">
+          Plan: <strong>${sub.planName}</strong>
+        </p>
+        ${nextBtn}
+      </div>
+    </div>`;
+}
+
+function extractProductId(sub) {
+  return sub.productId || '';
+}
+
+// ── Skeleton HTML ─────────────────────────────────────────
+function skeletonCard(lines = 2) {
+  const bars = Array(lines).fill(0).map((_, i) =>
+    `<div style="height:${i===0?'28px':'12px'};width:${i===0?'40%':Math.floor(50+Math.random()*40)+'%'};background:var(--bg-2);border-radius:4px;margin-bottom:8px;animation:pulse 1.4s ease infinite ${i*0.15}s"></div>`
+  ).join('');
+  return `<div style="padding:16px">${bars}</div>`;
+}
+
+// ── Dashboard ─────────────────────────────────────────────
+async function renderDashboard(sub, access) {
+  // Render shell + skeleton instantly
+  qs('content-area').innerHTML = `
+    <div id="tabs-bar">
+      <div class="tabs">
+        <button class="tab active" id="tab-mail"   onclick="switchTab('mail')">Mail</button>
+        <button class="tab"        id="tab-plans"  onclick="switchTab('plans')">My Plan</button>
+      </div>
+      <div id="mail-refresh-ts"  style="font-size:11px;color:var(--ink-4);padding:0 16px;display:none"></div>
+      <div id="plans-refresh-ts" style="font-size:11px;color:var(--ink-4);padding:0 16px;display:none"></div>
+    </div>
+    <div id="tab-mail-content">
+      <div id="mail-log-area">${skeletonCard(3)}</div>
+    </div>
+    <div id="tab-plans-content" style="display:none">
+      <div id="plans-area">${skeletonCard(2)}</div>
+    </div>`;
+
+  // Load data in parallel
+  const [mailRes, planRes, agentsRes, recsRes] = await Promise.allSettled([
+    apiPost({ action:'getMailLog',   uuid:STATE.uuid, subscriptionId:sub.subscriptionId }),
+    apiPost({ action:'getPlanCard',  uuid:STATE.uuid, subscriptionId:sub.subscriptionId }),
+    apiPost({ action:'getAgents',    uuid:STATE.uuid, subscriptionId:sub.subscriptionId }),
+    apiPost({ action:'getRecipients',uuid:STATE.uuid, subscriptionId:sub.subscriptionId })
+  ]);
+
+  const mailLog    = mailRes.status    === 'fulfilled' && mailRes.value.status    === 'ok' ? mailRes.value.mailLog    || [] : [];
+  const planCard   = planRes.status    === 'fulfilled' && planRes.value.status    === 'ok' ? planRes.value.planCard   || null : null;
+  const agents     = agentsRes.status  === 'fulfilled' && agentsRes.value.status  === 'ok' ? agentsRes.value.agents   || [] : [];
+  const recipients = recsRes.status    === 'fulfilled' && recsRes.value.status    === 'ok' ? recsRes.value.recipients || [] : [];
+
+  STATE.mailLog    = mailLog;
+  STATE.planCard   = planCard;
+  STATE.agents     = agents;
+  STATE.recipients = recipients;
+  if (!STATE.allPlanCards) STATE.allPlanCards = {};
+  if (planCard) STATE.allPlanCards[sub.subscriptionId] = planCard;
+
+  const now = new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
+  const mailTs  = qs('mail-refresh-ts');
+  const planTs  = qs('plans-refresh-ts');
+  if (mailTs)  { mailTs.textContent  = 'Updated ' + now; mailTs.style.display  = ''; }
+  if (planTs)  { planTs.textContent  = 'Updated ' + now; planTs.style.display  = ''; }
+
+  buildMailLog(sub, access, mailLog, planCard, agents, recipients);
+  buildPlanCard(sub, access, planCard, recipients);
+}
+
+let _activeTab = 'mail';
+function switchTab(tab) {
+  _activeTab = tab;
+  const mailC  = qs('tab-mail-content');
+  const plansC = qs('tab-plans-content');
+  const tabM   = qs('tab-mail');
+  const tabP   = qs('tab-plans');
+  const mailTs  = qs('mail-refresh-ts');
+  const planTs  = qs('plans-refresh-ts');
+  if (mailC)  mailC.style.display  = tab === 'mail'  ? '' : 'none';
+  if (plansC) plansC.style.display = tab === 'plans' ? '' : 'none';
+  if (tabM)  { tabM.classList.toggle('active',  tab === 'mail');  }
+  if (tabP)  { tabP.classList.toggle('active',  tab === 'plans'); }
+  if (mailTs)  mailTs.style.display  = tab === 'mail'  ? '' : 'none';
+  if (planTs)  planTs.style.display  = tab === 'plans' ? '' : 'none';
+}
+
+// ── Refresh helpers ───────────────────────────────────────
+async function _doRefreshMailLog(sub) {
+  const area = qs('mail-log-area');
+  if (area) area.innerHTML = skeletonCard(3);
+  try {
+    const r = await apiPost({ action:'getMailLog', uuid:STATE.uuid, subscriptionId:sub.subscriptionId });
+    if (r.status === 'ok') {
+      STATE.mailLog = r.mailLog || [];
+      buildMailLog(sub, STATE.access, STATE.mailLog, STATE.planCard, STATE.agents, STATE.recipients);
+      const ts = qs('mail-refresh-ts');
+      if (ts) ts.textContent = 'Updated ' + new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'});
+    }
+  } catch(e) { toast('Failed to refresh mail log', 'error'); }
+}
+
+// ── getPlanFriendlyName ───────────────────────────────────
+function getPlanFriendlyName(s) {
+  const pc = STATE.allPlanCards && STATE.allPlanCards[s.subscriptionId];
+  const friendly = pc && pc.friendlyName ? pc.friendlyName.trim() : '';
+  if (friendly && !friendly.startsWith('TEMP:')) return friendly;
+  return (s.planName || '').split('–')[0].trim() || s.subscriptionId.slice(-8);
+}
+
+// ── Plan switcher (multi-sub) ─────────────────────────────
+let _plansTabActiveSub = null;
+
+function renderPlansTab(sub, access, allSubs) {
+  const plansArea = qs('plans-area');
+  if (!plansArea) return;
+
+  const activeSub = allSubs.find(s => s.subscriptionId === _plansTabActiveSub) || sub;
+  const pc = STATE.allPlanCards && STATE.allPlanCards[activeSub.subscriptionId];
+  const recipients = STATE.recipients || [];
+
+  const tabsHtml = allSubs.length > 1 ? `
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto">
+      ${allSubs.map(s => {
+        const isActive = s.subscriptionId === activeSub.subscriptionId;
+        const label    = getPlanFriendlyName(s);
+        return `<button onclick="switchPlanTab('${s.subscriptionId}')"
+          style="padding:8px 16px;background:none;border:none;border-bottom:2px solid ${isActive?'var(--ink)':'transparent'};
+                 font-size:13px;font-weight:${isActive?'600':'400'};color:${isActive?'var(--ink)':'var(--ink-3)'};
+                 cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s">${label}</button>`;
+      }).join('')}
+    </div>` : '';
+
+  plansArea.innerHTML = tabsHtml + buildPlanCard(activeSub, access, pc, recipients);
+  attachPlanCardListeners(activeSub, pc);
+}
+
+function switchPlanTab(subscriptionId) {
+  _plansTabActiveSub = subscriptionId;
+  const allSubs = STATE.allSubs || [];
+  renderPlansTab(STATE.activeSub, STATE.access, allSubs);
+}
+
+// ── buildPlanCard ─────────────────────────────────────────
+function buildPlanCard(sub, access, pc, recipients) {
+  const allSubs  = STATE.allSubs || [sub];
+  const billing  = sub.interval === 'year' ? 'Annual' : 'Monthly';
+  const safeId   = (sub.subscriptionId || sub.planCardId || 'plan').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  const officialPlanName = (sub.planName || '—').split('–')[0].trim();
+  const friendlyPlanName = (pc && pc.friendlyName && !pc.friendlyName.startsWith('TEMP:'))
+    ? pc.friendlyName.trim() : null;
+  const planName = friendlyPlanName || officialPlanName;
+
+  // Virtual office address
+  const officeAddr = pc && pc.locationId ? '(address on file)' : '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
+
+  // Usage
+  const mailLimit    = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
+  const parcelLimit  = pc ? (parseInt(pc.parcelLimit) || 0) : 0;
+  const mailsUsed    = pc ? (parseInt(pc.mailsUsed)   || 0) : 0;
+  const parcelsUsed  = pc ? (parseInt(pc.parcelsUsed) || 0) : 0;
+  const mailPct      = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
+  const parcelPct    = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
+  const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
+
+  // Forwarding
+  const hasFwd  = pc && pc.autoFeature === 'ship';
+  const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
+
+  // Recipients
+  const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const activeR  = recipients.filter(r => r.status === 'active').length;
+  const pendingR = recipients.filter(r => r.status !== 'active').length;
+  const canAddR  = activeR < maxR;
+
+  const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
+  const _tempRecs = recipients.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
+
+  const _renderClientRec = r => {
+    const isTemp   = r.notes && r.notes.startsWith('TEMP:');
+    const statusDot = r.status === 'active'
+      ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px"></span>`
+      : `<span style="width:7px;height:7px;border-radius:50%;background:var(--amber);display:inline-block;margin-right:5px"></span>`;
+    return `<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
+      ${statusDot}
+      <span style="flex:1;color:var(--ink)">${r.name || '—'}</span>
+      ${r.companyName ? `<span style="font-size:11px;color:var(--ink-4)">${r.companyName}</span>` : ''}
+      ${isTemp ? `<span style="font-size:10px;background:var(--amber-bg);color:var(--amber);padding:2px 6px;border-radius:3px;margin-left:6px">Pending</span>` : ''}
+    </div>`;
+  };
+
+  const addRecipientForm = canAddR ? `
+    <form id="add-rec-form-${safeId}" style="margin-top:12px" onsubmit="submitAddRecipient(event,'${sub.subscriptionId}','${safeId}')">
+      <div class="form-row" style="margin-bottom:8px">
+        <input type="text" id="ar-name-${safeId}" placeholder="Full Name" required style="font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;flex:1">
+        <input type="text" id="ar-company-${safeId}" placeholder="Company (optional)" style="font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;flex:1">
+      </div>
+      <button type="submit" id="ar-btn-${safeId}" style="font-size:12px;padding:7px 14px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit">
+        + Add Recipient
+      </button>
+    </form>` : `<div style="font-size:12px;color:var(--ink-4);margin-top:10px">Recipient limit reached (${maxR}/${maxR})</div>`;
+
+  const planHtml = `
+    <div class="plan-card-item">
+      <!-- Header: friendly name (editable) -->
+      <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div id="fname-display-wrap-${safeId}" style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+          <div id="fname-display-${safeId}" style="font-size:15px;font-weight:600;color:var(--ink)">${planName}</div>
+          <button onclick="openFriendlyNameEdit('${pc ? pc.planCardId : ''}','${safeId}')"
+            style="background:none;border:none;cursor:pointer;padding:2px 4px;color:var(--ink-4);font-size:11px;font-family:inherit;transition:color .15s"
+            onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink-4)'" title="Edit nickname">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+        <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:4px">
+          <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp, Holding Co"
+            style="font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;outline:none;width:180px"
+            onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
+          <button id="fname-save-${safeId}" onclick="saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}')"
+            style="font-size:11px;padding:5px 10px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit">Save</button>
+          <button onclick="closeFriendlyNameEdit('${safeId}')"
+            style="font-size:11px;padding:5px 8px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;color:var(--ink-3)">✕</button>
+        </div>
+        ${friendlyPlanName ? `<div style="font-size:11px;color:var(--ink-4);margin-bottom:1px">${officialPlanName}</div>` : ''}
+        <div style="font-size:12px;color:var(--ink-4)">${billing}${sub.planAmountFormatted ? ' · ' + sub.planAmountFormatted : ''}</div>
+      </div>
+
+      <!-- Virtual address -->
+      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">Your Mailbox Address</div>
+      <div id="copy-addr-box-${safeId}"
+        onclick="copyAddress('${safeId}')"
+        style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;cursor:pointer;transition:border-color .15s,background .15s"
+        onmouseover="this.style.borderColor='var(--blue);this.style.background='#EEF4FC'" 
+        onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg)'">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div id="copy-addr-text-${safeId}" style="font-size:13px;color:var(--ink);font-weight:500;line-height:1.5">${officeAddr}</div>
+          <div id="copy-addr-icon-${safeId}" style="font-size:11px;color:var(--ink-4);margin-left:10px;white-space:nowrap;flex-shrink:0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Copy
+          </div>
+        </div>
+      </div>
+
+      <!-- Usage bars -->
+      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">Usage This Period</div>
+      ${mailLimit > 0 ? `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span style="color:var(--ink-3)">Mail</span>
+          <span style="color:var(--ink);font-weight:500">${mailsUsed} / ${mailLimit}</span>
+        </div>
+        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${mailPct}%;background:${bar(mailPct)==='safe'?'var(--green)':bar(mailPct)==='warn'?'var(--amber)':'var(--red)'};border-radius:3px;transition:width .3s"></div>
+        </div>
+      </div>` : ''}
+      ${parcelLimit > 0 ? `
+      <div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span style="color:var(--ink-3)">Parcels</span>
+          <span style="color:var(--ink);font-weight:500">${parcelsUsed} / ${parcelLimit}</span>
+        </div>
+        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${parcelPct}%;background:${bar(parcelPct)==='safe'?'var(--green)':bar(parcelPct)==='warn'?'var(--amber)':'var(--red)'};border-radius:3px;transition:width .3s"></div>
+        </div>
+      </div>` : ''}
+
+      ${hasFwd && fwdAddr ? `
+      <div style="margin-bottom:16px;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:4px">📬 Forwarding Address</div>
+        <div style="font-size:12px;color:var(--ink-3)">${fwdAddr}</div>
+      </div>` : ''}
+
+      <!-- Recipients -->
+      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">
+        Recipients <span style="font-weight:400;text-transform:none;font-size:11px">(${activeR}${pendingR > 0 ? '+'+pendingR+' pending' : ''} / ${maxR})</span>
+      </div>
+      <div id="rec-list-${safeId}">
+        ${[..._regRecs, ..._tempRecs].map(_renderClientRec).join('')}
+      </div>
+      ${addRecipientForm}
+    </div>`;
+
+  const plansArea = qs('plans-area');
+  if (plansArea) {
+    const allSubs = STATE.allSubs || [sub];
+    const tabsHtml = allSubs.length > 1 ? `
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto">
+        ${allSubs.map(s => {
+          const isActive = s.subscriptionId === (sub.subscriptionId);
+          const label    = getPlanFriendlyName(s);
+          return `<button onclick="switchPlanTab('${s.subscriptionId}')"
+            style="padding:8px 16px;background:none;border:none;border-bottom:2px solid ${isActive?'var(--ink)':'transparent'};
+                   font-size:13px;font-weight:${isActive?'600':'400'};color:${isActive?'var(--ink)':'var(--ink-3)'};
+                   cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s">${label}</button>`;
+        }).join('')}
+      </div>` : '';
+    plansArea.innerHTML = tabsHtml + `<div class="plan-card-grid">${planHtml}</div>`;
+    attachPlanCardListeners(sub, pc);
+  }
+
+  return planHtml;
+}
+
+function attachPlanCardListeners(sub, pc) {
+  // Add recipient form submission
+  const safeId = (sub.subscriptionId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const form = document.getElementById('add-rec-form-' + safeId);
+  if (form) {
+    form.addEventListener('submit', (e) => submitAddRecipient(e, sub.subscriptionId, safeId));
+  }
+}
+
+async function submitAddRecipient(e, subscriptionId, safeId) {
+  e.preventDefault();
+  const nameEl = document.getElementById('ar-name-' + safeId);
+  const compEl = document.getElementById('ar-company-' + safeId);
+  const btnEl  = document.getElementById('ar-btn-' + safeId);
+  const name   = nameEl ? nameEl.value.trim() : '';
+  if (!name) return;
+
+  const pc = STATE.allPlanCards && STATE.allPlanCards[subscriptionId];
+  const planCardId = pc ? pc.planCardId : (STATE.planCard ? STATE.planCard.planCardId : '');
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Adding...'; }
+
+  try {
+    const result = await apiPost({
+      action:          'addRecipient',
+      uuid:            STATE.uuid,
+      planCardId:      planCardId,
+      name:            name,
+      companyName:     compEl ? compEl.value.trim() : '',
+      type:            'individual',
+      language:        'en',
+      notifyOnArrival: true
+    });
+    if (result.status !== 'ok') throw new Error(result.message || 'Failed');
+    toast('Recipient added!', 'success');
+    if (nameEl) nameEl.value = '';
+    if (compEl) compEl.value = '';
+    // Refresh recipients
+    const rRes = await apiPost({ action:'getRecipients', uuid:STATE.uuid, subscriptionId });
+    if (rRes.status === 'ok') {
+      STATE.recipients = rRes.recipients || [];
+      const sub = (STATE.allSubs||[]).find(s=>s.subscriptionId===subscriptionId) || STATE.activeSub;
+      buildPlanCard(sub, STATE.access, pc, STATE.recipients);
+    }
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '+ Add Recipient'; }
+  }
+}
+
+function copyAddress(safeId) {
+  const el = document.getElementById('copy-addr-text-' + safeId);
+  const icon = document.getElementById('copy-addr-icon-' + safeId);
+  const box = document.getElementById('copy-addr-box-' + safeId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    if (box)  { box.style.borderColor = 'var(--green)'; box.style.background = '#E8F5EE'; }
+    if (icon) icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied ✓';
+    setTimeout(() => {
+      if (box)  { box.style.borderColor = 'var(--border)'; box.style.background = 'var(--bg)'; }
+      if (icon) icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy';
+    }, 2000);
+  }).catch(() => toast('Copy failed', 'error'));
+}
+
+// ── buildMailLog ──────────────────────────────────────────
+function buildMailLog(sub, access, mailLog, pc, agents, recipients) {
+  const area = qs('mail-log-area');
+  if (!area) return;
+
+  const autoFeature  = pc ? (pc.autoFeature || 'none').toLowerCase() : 'none';
+  const isScanPlan   = autoFeature === 'scan';
+  const isShipPlan   = autoFeature === 'ship';
+  const canRelease   = sub.accessStatus === 'ACTIVE';
+  const activeAgents = (agents || []).filter(a => a.status === 'active');
+  const activeRecs   = (recipients || []).filter(r => r.status === 'active');
+
+  if (!mailLog || mailLog.length === 0) {
+    area.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--ink-4)">
+        <div style="font-size:36px;margin-bottom:12px">📭</div>
+        <div style="font-size:14px;font-weight:500;color:var(--ink-3)">No mail yet</div>
+        <div style="font-size:12px;margin-top:4px">Your mail will appear here once it arrives.</div>
+      </div>`;
+    return;
+  }
+
+  // Sort by due date ascending (soonest first)
+  const sorted = [...mailLog].sort((a, b) => {
+    const da = a.storageDueDate ? new Date(a.storageDueDate) : new Date('9999');
+    const db = b.storageDueDate ? new Date(b.storageDueDate) : new Date('9999');
+    return da - db;
+  });
+
+  const statusLabel = {
+    arrived:       'Arrived',
+    scanned:       'Scanned',
+    stored:        'Stored',
+    forwarded:     'Forwarded',
+    picked_up:     'Picked Up',
+    shredded:      'Shredded',
+    ready_to_ship: 'Ready to Ship',
+  };
+
+  const blurred = !canRelease;
+
+  const rows = sorted.map(m => {
+    const isParcel  = m.type === 'parcel';
+    const isDone    = ['picked_up','shredded','forwarded'].includes(m.status);
+    const isBlurred = blurred && !isDone;
+    const dueDate   = m.storageDueDate ? new Date(m.storageDueDate) : null;
+    const daysLeft  = dueDate ? Math.ceil((dueDate - Date.now()) / 86400000) : null;
+    const urgent    = daysLeft !== null && daysLeft <= 3 && !isDone;
+
+    const dueBadge = dueDate && !isDone ? `
+      <div style="font-size:10px;color:${urgent?'var(--red)':'var(--ink-4)'};margin-top:2px">
+        ${urgent ? '⚠️ ' : ''}Due ${dueDate.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}${daysLeft !== null ? ' · ' + (daysLeft < 0 ? 'Overdue' : daysLeft + 'd left') : ''}
+      </div>` : '';
+
+    const scanImg = isScanPlan && m.scanImageUrl ? `
+      <div style="margin-top:8px">
+        <a href="${m.scanImageUrl}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none">📄 View Scan</a>
+      </div>` : '';
+
+    const contentBlur = isBlurred ? 'filter:blur(4px);user-select:none;pointer-events:none' : '';
+
+    return `
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);${isDone?'opacity:0.6':''}">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="font-size:20px;flex-shrink:0;margin-top:2px">${isParcel?'📦':'✉️'}</div>
+          <div style="flex:1;min-width:0;${contentBlur}">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:500;color:var(--ink)">${m.recipientName || '—'}</span>
+              <span class="pill ${m.status || 'arrived'}">${statusLabel[m.status] || m.status || 'Arrived'}</span>
+              ${m.isConfidential ? `<span class="pill confidential">Confidential</span>` : ''}
+            </div>
+            <div style="font-size:11px;color:var(--ink-4);margin-top:2px">
+              ${m.mailId || ''} · ${m.arrivedAt ? new Date(m.arrivedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}) : '—'}
+            </div>
+            ${dueBadge}
+            ${scanImg}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const refreshBtn = `
+    <div style="display:flex;align-items:center;justify-content:flex-end;padding:8px 16px;border-bottom:1px solid var(--border)">
+      <button onclick="_doRefreshMailLog(STATE.activeSub)"
+        style="font-size:11px;color:var(--ink-4);background:none;border:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Refresh
+      </button>
+    </div>`;
+
+  area.innerHTML = `<div class="card" style="overflow:hidden">${refreshBtn}${rows}</div>`;
+}
+
+// ── Friendly name edit ────────────────────────────────────
+function openFriendlyNameEdit(planCardId, safeId) {
+  const display  = document.getElementById('fname-display-' + safeId);
+  const editWrap = document.getElementById('fname-edit-' + safeId);
+  const input    = document.getElementById('fname-input-' + safeId);
+  if (display)  display.closest('[id^="fname-display-wrap"]') ? 
+    document.getElementById('fname-display-wrap-' + safeId).style.display = 'none' :
+    display.style.display = 'none';
+  if (editWrap) editWrap.style.display = 'flex';
+  if (input)    { input.value = display ? display.textContent : ''; input.focus(); input.select(); }
+}
+
+function closeFriendlyNameEdit(safeId) {
+  const display  = document.getElementById('fname-display-' + safeId);
+  const editWrap = document.getElementById('fname-edit-' + safeId);
+  const wrap     = document.getElementById('fname-display-wrap-' + safeId);
+  if (wrap)     wrap.style.display = 'flex';
+  if (display)  display.style.display = '';
+  if (editWrap) editWrap.style.display = 'none';
+}
+
+async function saveFriendlyName(planCardId, safeId) {
+  const input   = document.getElementById('fname-input-' + safeId);
+  const name    = input ? input.value.trim() : '';
+  const saveBtn = document.getElementById('fname-save-' + safeId);
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
+  try {
+    const r = await apiPost({ action:'updateFriendlyName', uuid:STATE.uuid, planCardId, friendlyName: name });
+    if (r.status === 'ok') {
+      const display = document.getElementById('fname-display-' + safeId);
+      if (display) display.textContent = name || 'Add a nickname';
+      if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.friendlyName = name;
+      if (STATE.allPlanCards) {
+        Object.values(STATE.allPlanCards).forEach(pc => {
+          if (pc && pc.planCardId === planCardId) pc.friendlyName = name;
+        });
+      }
+      _plansTabActiveSub = null;
+      closeFriendlyNameEdit(safeId);
+      toast('Nickname saved', 'success');
+    } else throw new Error(r.message || 'Save failed');
+  } catch(e) {
+    toast(e.message, 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+  }
+}
+
+// ── handleBannerAction ────────────────────────────────────
+function handleBannerAction(setupStep) {
+  const sub = STATE.activeSub;
+  if (!sub) return;
+  if (setupStep === 'plan_setup' || setupStep === 'add_recipients') {
+    renderSetup(sub, STATE.access);
+  }
+}
+
+  </script>
+</body>
+</html>
