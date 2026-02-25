@@ -1745,17 +1745,22 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
       <!-- Plan card header -->
       <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
         <div style="flex:1;min-width:0">
-          <!-- Friendly name display + inline edit -->
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
-            <div id="fname-display-${safeId}" style="font-size:15px;font-weight:600;color:var(--ink)">${planName}</div>
+
+          <!-- Friendly nickname — editable, shown above plan name -->
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <div id="fname-display-${safeId}"
+              style="font-size:15px;font-weight:600;color:var(--ink);line-height:1.2">
+              ${friendlyPlanName || 'Add a nickname'}
+            </div>
             <button onclick="openFriendlyNameEdit('${pc ? pc.planCardId : ''}','${safeId}')"
-              style="background:none;border:none;cursor:pointer;color:var(--ink-4);padding:2px 4px;border-radius:4px;font-size:10px;line-height:1"
+              style="background:none;border:none;cursor:pointer;color:var(--ink-4);padding:2px 4px;border-radius:4px;line-height:1;flex-shrink:0"
               title="Edit nickname">
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a2.121 2.121 0 013 3L5 15H1v-4L11.5 2.5z"/></svg>
             </button>
           </div>
+
           <!-- Inline edit form (hidden by default) -->
-          <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:4px">
+          <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:6px">
             <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp, Holding Co"
               style="font-size:13px;padding:4px 8px;border:1px solid var(--blue);border-radius:5px;font-family:inherit;outline:none;width:180px"
               onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
@@ -1764,8 +1769,10 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
             <button onclick="closeFriendlyNameEdit('${safeId}')"
               style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;color:var(--ink-3)">Cancel</button>
           </div>
-          ${friendlyPlanName ? `<div style="font-size:11px;color:var(--ink-4);margin-bottom:1px">${officialPlanName}</div>` : ''}
-          <div style="font-size:12px;color:var(--ink-4)">${billing}${sub.planAmount ? ' · $' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
+
+          <!-- Fixed plan name — never editable -->
+          <div style="font-size:12px;color:var(--ink-4);margin-bottom:1px">${officialPlanName} · ${billing}${sub.planAmount ? ' · $' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
+
         </div>
         <span class="pill ${pillClass}" style="font-size:11px;white-space:nowrap;flex-shrink:0">${sub.accessStatus.replace(/_/g,' ')}</span>
       </div>
@@ -1946,8 +1953,8 @@ function openFriendlyNameEdit(planCardId, safeId) {
   const editWrap = document.getElementById('fname-edit-' + safeId);
   const input    = document.getElementById('fname-input-' + safeId);
   if (!editWrap) return;
-  const current = display ? display.textContent.replace('✏ ','').trim() : '';
-  if (input) input.value = current === 'No nickname set' ? '' : current;
+  const current = display ? display.textContent.trim() : '';
+  if (input) input.value = (current === 'Add a nickname') ? '' : current;
   if (display) display.style.display = 'none';
   editWrap.style.display = 'flex';
   if (input) input.focus();
@@ -1969,7 +1976,7 @@ async function saveFriendlyName(planCardId, safeId) {
     const r = await apiPost({ action:'updateFriendlyName', uuid:STATE.uuid, planCardId, friendlyName: name });
     if (r.status === 'ok') {
       const display = document.getElementById('fname-display-' + safeId);
-      if (display) display.textContent = name || 'No nickname set';
+      if (display) display.textContent = name || 'Add a nickname';
       if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.notes = name;
       _plansTabActiveSub = null; // force re-render tab labels
       closeFriendlyNameEdit(safeId);
