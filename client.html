@@ -774,6 +774,7 @@ function renderBanner(sub) {
   const typeClass = {
     setup_required:      'setup',
     canceled_with_access:'warning',
+    pending_payment:     'warning',
     payment_required:    'error',
     canceled:            'error'
   }[b.type] || 'setup';
@@ -781,6 +782,7 @@ function renderBanner(sub) {
   const icon = {
     setup_required:      '📋',
     canceled_with_access:'⏰',
+    pending_payment:     '📬',
     payment_required:    '💳',
     canceled:            '🔒'
   }[b.type] || 'ℹ️';
@@ -811,7 +813,8 @@ function handleBannerAction(step) {
 // ── Blocked Sub Screen ────────────────────────────────────
 function renderBlockedSub(sub) {
   const b = sub.banner || {};
-  const icon = sub.accessStatus === 'PAYMENT_REQUIRED' ? '💳' : '🔒';
+  const icon = sub.accessStatus === 'PENDING_PAYMENT'  ? '📬'
+             : sub.accessStatus === 'PAYMENT_REQUIRED' ? '💳' : '🔒';
   const btnHtml = b.actionLabel
     ? `<button class="btn btn-primary btn-full" onclick="window.open('${b.actionUrl||'#'}','_blank')">${b.actionLabel}</button>`
     : '';
@@ -1471,7 +1474,7 @@ function renderPlansTab(sub, access) {
         const label     = getPlanFriendlyName(s);
         const statusDot = s.accessStatus === 'ACTIVE' ? '🟢' :
                           s.accessStatus === 'CANCELED_WITH_ACCESS' ? '🟡' :
-                          s.accessStatus === 'PAYMENT_REQUIRED' ? '🔴' : '⚪';
+                          s.accessStatus === 'PAYMENT_REQUIRED' ? '🔴' : s.accessStatus === 'PENDING_PAYMENT' ? '🟡' : '⚪';
         return `<button onclick="switchPlanTab('${s.subscriptionId}')"
           style="flex:1;padding:10px 8px;border:none;font-family:inherit;font-size:12px;font-weight:${isActive?'600':'400'};
           cursor:pointer;background:${isActive?'var(--white)':'transparent'};color:${isActive?'var(--ink)':'var(--ink-3)'};
@@ -1586,7 +1589,7 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
   // Status pill colour
   const pillClass = {
     ACTIVE:'scanned', CANCELED_WITH_ACCESS:'warning',
-    PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
+    PENDING_PAYMENT:'', PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
   }[sub.accessStatus] || 'stored';
 
   // Friendly plan name — use pc.friendlyName if set (customer nickname), else official plan name
