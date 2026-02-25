@@ -1069,14 +1069,35 @@ function onMailTypeChange() {
   const radio = document.querySelector('input[name="log-type-radio"]:checked');
   const hidden = qs('log-type');
   if (radio && hidden) hidden.value = radio.value;
+  const isParcel = qs('log-type') && qs('log-type').value === 'parcel';
+
+  // Show parcel-specific fields
   const pf = qs('parcel-fields');
-  if (pf) pf.style.display = qs('log-type') && qs('log-type').value === 'parcel' ? 'block' : 'none';
+  if (pf) pf.style.display = isParcel ? 'block' : 'none';
+
+  // Show oversized toggle only for parcels, reset when switching away
+  const oversizedRow = qs('oversized-row');
+  if (oversizedRow) oversizedRow.style.display = isParcel ? 'flex' : 'none';
+  if (!isParcel && qs('tog-oversized')) qs('tog-oversized').classList.remove('on');
+
+  // Block parcel selection on Economy plans (parcelLimit = 0)
+  const pc = STATE.logPlanCard;
+  if (isParcel && pc && (!pc.parcelLimit || parseInt(pc.parcelLimit) === 0)) {
+    // Switch back to letter
+    const letterRadio = document.getElementById('log-type-letter');
+    if (letterRadio) { letterRadio.checked = true; hidden.value = 'letter'; }
+    if (pf) pf.style.display = 'none';
+    if (oversizedRow) oversizedRow.style.display = 'none';
+    toast('This plan does not include parcel handling — upgrade to log parcels.', 'error');
+    return;
+  }
+
   updateScanUrlRequirement();
 }
 
 function updateScanUrlRequirement() {
   const pc           = STATE.logPlanCard;
-  const isScanPlan   = pc && pc.planType && pc.planType.toLowerCase().includes('scan');
+  const isScanPlan   = pc && pc.autoFeature === 'scan';
   const isConf       = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
   const isLetter     = qs('log-type') && qs('log-type').value !== 'parcel';
   const mandatory    = isScanPlan && isLetter && !isConf;
@@ -1255,7 +1276,7 @@ function selectRecipient(data) {
   // Forwarding notice
   const fwdNotice = qs('forwarding-notice');
   if (fwdNotice) {
-    const hasFwd = data.planType && data.planType.toLowerCase().includes('forward');
+    const hasFwd = data.autoFeature === 'ship';
     const isConf = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
     fwdNotice.style.display = (hasFwd && !isConf) ? 'block' : 'none';
   }
@@ -1295,7 +1316,7 @@ async function submitLogMail() {
 
   const isConfidential = qs('tog-confidential') && qs('tog-confidential').classList.contains('on');
   const type           = qs('log-type') ? qs('log-type').value : 'letter';
-  const isScanPlan     = pc && pc.planType && pc.planType.toLowerCase().includes('scan');
+  const isScanPlan     = pc && pc.autoFeature === 'scan';
   const scanMandatory  = !isSpecial && isScanPlan && type === 'letter' && !isConfidential;
   const scanUrl        = qs('log-scan') ? qs('log-scan').value.trim() : '';
   if (scanMandatory && !scanUrl) {
@@ -1322,6 +1343,7 @@ async function submitLogMail() {
       senderName:        qs('log-sender')        ? qs('log-sender').value.trim()        : '',
       type:              type,
       confidential:      isConfidential,
+      oversizedPickup:   qs('tog-oversized') ? qs('tog-oversized').classList.contains('on') : false,
       specialCase:       isSpecial,
       specialCaseReason: isSpecial ? (qs('log-special-reason') ? qs('log-special-reason').value : '') : '',
       physicalLocation:  qs('log-location')      ? qs('log-location').value.trim()      : '',
@@ -2145,8 +2167,8 @@ function renderPlanCardsList(planCards) {
             <div style="font-size:11px;color:var(--ink-4);display:flex;gap:12px;flex-wrap:wrap">
               <span>${pc.planCardId}</span>
               <span>${activeRec.length} recipient${activeRec.length!==1?'s':''}${tempRec.length ? ` (${tempRec.length} temp)` : ''}</span>
-              ${pc.forwardingEnabled==='TRUE' ? '<span>📬 Forwarding</span>' : ''}
-              ${pc.planType&&pc.planType.toLowerCase().includes('scan') ? '<span>🔍 Scan</span>' : ''}
+              ${pc.autoFeature === 'ship' ? '<span>📬 Forwarding</span>' : ''}
+              ${pc.autoFeature === 'scan' ? '<span>🔍 Scan</span>' : ''}
             </div>
           </div>
           <span style="color:var(--ink-4);font-size:14px;flex-shrink:0" id="pc-chevron-${i}">▸</span>
