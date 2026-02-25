@@ -1282,15 +1282,13 @@ function applyMailFilter() {
 // ── Init ─────────────────────────────────────────────────
 function renderMailList(mailLog, sub, statusFilter) {
   const blurred   = !sub.canAccess;
-  // Merge plan card fields (forwardingEnabled, planType live on planCard, not subscription)
+  // Merge plan card fields — autoFeature is source of truth for features
   const pc          = STATE.planCard || {};
   // autoFeature: 'none' | 'scan' | 'ship' — from Plans sheet via buildSubAccess
   const autoFeature = (pc.autoFeature || sub.autoFeature || 'none').toLowerCase();
   const hasScan     = autoFeature === 'scan';
   const hasShip     = autoFeature === 'ship';  // auto-forward (letters only, never parcels)
-  const hasFwd      = pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true ||
-                      sub.forwardingEnabled === 'TRUE' || sub.forwardingEnabled === true ||
-                      hasShip;
+  const hasFwd      = autoFeature === 'ship';
 
   if (!mailLog.length) return `
     <div class="card">
@@ -1619,7 +1617,7 @@ function buildPlanCard(sub, pc, recipients, isLoaded) {
   const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
 
   // Forwarding
-  const hasFwd = pc && (pc.forwardingEnabled === 'TRUE' || pc.forwardingEnabled === true);
+  const hasFwd = pc && pc.autoFeature === 'ship';
   const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
 
   // Recipients
