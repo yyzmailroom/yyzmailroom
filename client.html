@@ -641,10 +641,15 @@ async function api(path, opts = {}) {
 }
 async function apiPost(body) {
   // Use GET instead of POST to avoid CORS preflight issues with Apps Script
-  const { uuid, action, ...rest } = body;
+  // productId and subscriptionId are sent as top-level params so Apps Script
+  // can read them via e.parameter directly (e.parameter.data is a blob)
+  const { uuid, action, productId, subscriptionId, planCardId, ...rest } = body;
   const data  = encodeURIComponent(JSON.stringify(rest));
-  const url   = API_URL + '&uuid=' + encodeURIComponent(uuid) + '&action=' + encodeURIComponent(action) + '&data=' + data;
-  const res   = await fetch(url);
+  let url = API_URL + '&uuid=' + encodeURIComponent(uuid) + '&action=' + encodeURIComponent(action) + '&data=' + data;
+  if (productId)      url += '&productId='      + encodeURIComponent(productId);
+  if (subscriptionId) url += '&subscriptionId=' + encodeURIComponent(subscriptionId);
+  if (planCardId)     url += '&planCardId='     + encodeURIComponent(planCardId);
+  const res = await fetch(url);
   return res.json();
 }
 
@@ -1022,8 +1027,10 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   const isScan      = feature === 'scan';
   const isNone      = !isShip && !isScan;
   const planLabel   = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
-  const billingCycle = (sub.interval === 'year') ? 'year' : 'month';
-  const isYearly    = billingCycle === 'year';
+  const billingCycle  = (sub.interval === 'year') ? 'year' : 'month';
+  const isYearly     = billingCycle === 'year';
+  const cycleLabel   = isYearly ? 'Yearly Plan' : 'Monthly Plan';
+  const quotaLabel   = isYearly ? 'year (annual quota)' : 'month';
 
   // Plan stats
   const mailLimit     = parseInt(tmpl && tmpl.mailLimit        || 0);
@@ -1037,14 +1044,14 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
 
   // ── Mail section rows ──
   const mailRows = [
-    { label: 'Mail included',  value: mailLimit ? mailLimit + ' letters / ' + billingCycle : 'Unlimited' },
+    { label: 'Mail included',  value: mailLimit ? mailLimit + ' letters / ' + quotaLabel : 'Unlimited' },
     { label: 'Mail storage',   value: mailStorage + ' days' },
     { label: 'Mail overage',   value: mailFee ? mailFee + ' / letter' : 'N/A' },
   ];
 
   // ── Parcel section rows ──
   const parcelRows = hasParcel ? [
-    { label: 'Parcels included', value: parcelLimit + ' parcels / ' + billingCycle },
+    { label: 'Parcels included', value: parcelLimit + ' parcels / ' + quotaLabel },
     { label: 'Parcel storage',   value: parcelStorage + ' days' },
     { label: 'Parcel overage',   value: parcelFee ? parcelFee + ' / parcel' : 'N/A' },
   ] : [
@@ -1066,6 +1073,11 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
 
   const summaryHtml = `
     <div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:12px;font-weight:600;color:var(--ink)">${planLabel}</span>
+        <span style="font-size:11px;background:var(--bg-2);color:var(--ink-4);padding:2px 8px;
+          border-radius:20px;font-weight:500">${cycleLabel}</span>
+      </div>
       <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:8px">
         <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;
           letter-spacing:.05em;margin-bottom:8px">✉️ Mail</div>
