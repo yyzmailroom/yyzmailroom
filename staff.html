@@ -1399,7 +1399,7 @@ async function renderStaffMailLog(container) {
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
         <div style="font-family:'DM Serif Display',serif;font-size:20px">Mail Log</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="ml-search" placeholder="Search name, sender, ID..."
+          <input type="text" id="ml-search" placeholder="Search name, sender, email, phone..."
             style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;width:200px;font-family:inherit"
             oninput="filterStaffMailLog(this.value)">
           <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--white)">
@@ -1447,11 +1447,29 @@ function filterStaffMailLog(query) {
   const ACTIVE_STATUSES   = ['arrived','scanned','stored','forwarding_pending'];
   const RELEASED_STATUSES = ['picked_up','forwarded','shredded','discarded','return_to_sender'];
   let filtered = _allStaffMail.filter(m => {
+    // Exclude unassigned special cases — they belong in Exceptions tab
+    const isSC = m.specialCase === 'TRUE' || m.specialCase === true;
+    if (isSC && !m.recipientId) return false;
     if (_mailView === 'active')   { if (!ACTIVE_STATUSES.includes(m.status))   return false; }
     if (_mailView === 'released') { if (!RELEASED_STATUSES.includes(m.status)) return false; }
     if (!q) return true;
-    return [m.recipientName, m.senderName, m.planCardId, m.mailId, m.physicalLocation]
+    // Search: name, sender, planCardId, mailId, location, clientEmail, clientPhone
+    return [m.recipientName, m.senderName, m.planCardId, m.mailId, m.physicalLocation,
+            m.clientEmail||'', m.clientPhone||'']
       .join(' ').toLowerCase().includes(q);
+  });
+  // Sort: active by due date ASC (soonest first), released by loggedAt DESC
+  filtered.sort((a, b) => {
+    const aAct = ACTIVE_STATUSES.includes(a.status);
+    const bAct = ACTIVE_STATUSES.includes(b.status);
+    if (aAct && bAct) {
+      const aDue = a.storageDueDate ? new Date(a.storageDueDate) : new Date('9999-12-31');
+      const bDue = b.storageDueDate ? new Date(b.storageDueDate) : new Date('9999-12-31');
+      return aDue - bDue;
+    }
+    if (aAct && !bAct) return -1;
+    if (!aAct && bAct) return 1;
+    return new Date(b.loggedAt) - new Date(a.loggedAt);
   });
   renderStaffMailList(filtered);
 }
@@ -1543,8 +1561,13 @@ function renderStaffMailList(mailLog) {
                   ? `<button class="btn btn-secondary btn-sm" disabled title="${isSpecialCase ? 'Assign recipient first' : 'Missing account info'}" style="opacity:0.5;cursor:not-allowed">Release</button>`
                   : `<button class="btn btn-secondary btn-sm" onclick="openMailDetail('${m.mailId}')">View</button>`}
               ${(m.status !== 'picked_up' && m.status !== 'deleted' && m.status !== 'forwarded' && m.status !== 'shredded' && m.status !== 'discarded')
-                ? `<button class="btn btn-secondary btn-sm" title="Edit" onclick="openEditMailModal('${safeMailId}')">✏</button>
-                   <button class="btn btn-secondary btn-sm" title="Delete" style="color:var(--red)" onclick="confirmDeleteMail('${safeMailId}','${safeRecip}')">🗑</button>`
+                ? `<button class="btn btn-secondary btn-sm" title="Edit mail item" onclick="openEditMailModal('${safeMailId}')" style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11.5 2.5a2.121 2.121 0 013 3L5 15H1v-4L11.5 2.5z"/>
+                    </svg>
+                    Edit
+                   </button>
+                   <button class="btn btn-secondary btn-sm" title="Delete mail item" style="color:var(--red);padding:3px 8px" onclick="confirmDeleteMail('${safeMailId}','${safeRecip}')">✕ Delete</button>`
                 : ''}
             </div>
           </div>`;
@@ -1986,12 +2009,23 @@ async function submitAssign(mailId) {
   const btn = qs('assign-submit-btn');
   if (btn) { btn.disabled=true; btn.textContent='Assigning...'; }
   try {
-    const result = await apiPost({ action:'assignMailRecipient', uuid:STATE.uuid, mailId, recipientId:_assignTarget.recipientId, recipientName:_assignTarget.name, planCardId:_assignTarget.planCardId, clientId:_assignTarget.clientId, subscriptionId:_assignTarget.subscriptionId });
+    const result = await apiPost({ action:'assignMailRecipient', uuid:STATE.uuid, mailId,
+      recipientId:_assignTarget.recipientId, recipientName:_assignTarget.name,
+      planCardId:_assignTarget.planCardId, clientId:_assignTarget.clientId,
+      subscriptionId:_assignTarget.subscriptionId });
     if (result.status==='ok') {
       qs('assign-modal').remove();
-      toast('Mail assigned to '+_assignTarget.name,'success');
       _assignTarget = null;
+      // If plan requires scan, prompt for scan URL before dismissing
+      if (result.needsScan) {
+        const scanUrl = prompt('This is a SCAN plan.\nPlease enter the Scan Image URL for this item (required):');
+        if (scanUrl && scanUrl.trim()) {
+          await apiPost({ action:'editMailItem', uuid:STATE.uuid, mailId, scanImageUrl: scanUrl.trim() });
+        }
+      }
+      toast('Mail assigned — now in main mail log', 'success');
       await loadExceptions();
+      await loadStaffMailLog();
     } else throw new Error(result.message||'Failed');
   } catch(err) { toast(err.message,'error'); if (btn) { btn.disabled=false; btn.textContent='Assign'; } }
 }
