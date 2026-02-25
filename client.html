@@ -1019,20 +1019,39 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
     if (res.status === 'ok') {
       tmpl      = res.template   || null;
       locations = res.locations  || [];
+      // Stash maxRecipients so step 2 can use it even before planCard is created
+      if (tmpl && tmpl.maxRecipients) {
+        STATE._pendingMaxRecipients = parseInt(tmpl.maxRecipients) || 1;
+      }
     }
   } catch(e) { /* fallback to blank form */ }
 
+  // ── Plan feature flags from Plans sheet ─────────────────────────────────
   const feature     = tmpl ? (tmpl.autoFeature || 'none').toLowerCase() : 'none';
-  const isShip      = feature === 'ship';
-  const isScan      = feature === 'scan';
+  const isShip      = feature === 'ship';   // auto-forward letters 1st week of month
+  const isScan      = feature === 'scan';   // scan + email on arrival (non-confidential)
   const isNone      = !isShip && !isScan;
-  const planLabel   = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
-  const billingCycle  = (sub.interval === 'year') ? 'year' : 'month';
-  const isYearly     = billingCycle === 'year';
-  const cycleLabel   = isYearly ? 'Yearly Plan' : 'Monthly Plan';
-  const quotaLabel   = isYearly ? 'year (annual quota)' : 'month';
 
-  // Plan stats
+  // ── Plan identity ────────────────────────────────────────────────────
+  // planName from Plans sheet col A; limitType from col D ('monthly'|'yearly')
+  const planLabel   = tmpl && tmpl.planName
+    ? tmpl.planName.split('–')[0].trim()
+    : (sub.planName || '').split('–')[0].trim() || 'Your Plan';
+
+  const limitType   = tmpl ? (tmpl.limitType || '').toLowerCase() : '';
+  const isYearly    = limitType === 'yearly' || sub.interval === 'year';
+  const cycleLabel  = isYearly ? 'Yearly Plan' : 'Monthly Plan';
+  // quota label shown in detail rows e.g. "60 letters / year"
+  const quotaLabel  = isYearly ? 'year' : 'month';
+
+  // ── Limits & fees from Plans sheet ──────────────────────────────────
+  // mailLimit      col F — total letters for the plan term
+  // mailStorageDays col M — days before shred/action
+  // mailOverageFee  col G — fee per letter over limit
+  // parcelsIncluded col H — total parcels for the plan term
+  // parcelStorageDays col N — days before discard / fee
+  // parcelOverageFee  col I — fee per parcel over limit
+  // maxRecipients   col E — max names allowed on this plan
   const mailLimit     = parseInt(tmpl && tmpl.mailLimit        || 0);
   const parcelLimit   = parseInt(tmpl && tmpl.parcelsIncluded  || 0);
   const hasParcel     = parcelLimit > 0;
@@ -1040,7 +1059,11 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   const parcelFee     = tmpl && parseFloat(tmpl.parcelOverageFee) > 0 ? '$' + parseFloat(tmpl.parcelOverageFee).toFixed(2) : null;
   const mailStorage   = parseInt(tmpl && tmpl.mailStorageDays   || 30);
   const parcelStorage = parseInt(tmpl && tmpl.parcelStorageDays || 7);
-  const planMemo      = tmpl && tmpl.planMemo ? tmpl.planMemo.trim() : '';
+  const maxRecipients = parseInt(tmpl && tmpl.maxRecipients     || 1);
+
+  // ── planMemo from Plans sheet col P ─────────────────────────────────
+  // Shown as a blurb above the plan detail table
+  const planMemo    = tmpl && tmpl.planMemo ? String(tmpl.planMemo).trim() : '';
 
   // ── Mail section rows ──
   const mailRows = [
@@ -1135,7 +1158,8 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   const fwdHtml = isShip ? `
     <div class="form-divider">Forwarding Address</div>
     <div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.5">
-      Your mail will be forwarded to this address during the first week of each month.
+      Your letters will be bundled and shipped to this address during the <strong>first week of every month</strong>.
+      Confidential mail will never be forwarded. Parcels are not included in forwarding.
     </div>
     <div class="form-group">
       <label>Street Address</label>
@@ -1179,8 +1203,9 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       <div>
         <div style="font-size:13px;font-weight:600;color:#1a5c2a;margin-bottom:4px">Scan Plan — Digital Delivery</div>
         <div style="font-size:12px;color:#2d7a3a;line-height:1.5">
-          Your mail will be scanned and sent digitally to <strong>${access.email || 'your email address'}</strong>.
-          You can update your email address anytime in your account settings.
+          Non-confidential letters will be scanned and emailed to <strong>${access.email || 'your registered email'}</strong> when they arrive.
+          Confidential mail (e.g. credit cards, government ID) will <strong>not</strong> be scanned.
+          Physical mail stays available for pickup for <strong>${mailStorage} days</strong>, then is discarded.
         </div>
       </div>
     </div>` : '';
@@ -1309,8 +1334,10 @@ function extractProductId(sub) {
 
 function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
   // planCard may already be cached — grab maxRecipients from it
-  const pc        = STATE.planCard || STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId] || null;
-  const maxR      = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const pc        = STATE.planCard || (STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId]) || null;
+  // maxRecipients: prefer live planCard, fall back to template value stashed during step 1
+  const maxR      = pc ? (parseInt(pc.maxRecipients) || 1)
+                       : (STATE._pendingMaxRecipients || 1);
   const planLabel = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
 
   // Build N recipient slot forms
