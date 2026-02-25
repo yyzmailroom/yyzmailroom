@@ -801,7 +801,7 @@ async function loadAndRenderSub(sub, access) {
     return;
   }
   if (sub.setupRequired) {
-    renderSetup(sub, access);
+    await renderSetup(sub, access);
     return;
   }
   await renderDashboard(sub, access);
@@ -949,7 +949,7 @@ function startPlanSetup(subscriptionId) {
 }
 
 // ── Setup Flow ────────────────────────────────────────────
-function renderSetup(sub, access) {
+async function renderSetup(sub, access) {
   const step = sub.setupStep;
 
   // Hide subscription switcher tabs during entire onboarding flow
@@ -976,7 +976,7 @@ function renderSetup(sub, access) {
   `).join('');
 
   if (step === 'plan_setup') {
-    renderOnboardingForm(sub, access, stepsHtml, backBtn);
+    await renderOnboardingForm(sub, access, stepsHtml, backBtn);
   } else if (step === 'add_recipients') {
     renderAddRecipient(sub, access, stepsHtml, backBtn);
   } else if (step === 'pending_activation') {
