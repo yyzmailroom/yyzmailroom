@@ -897,6 +897,10 @@ function renderPlanSelection(access) {
   if (pending.length === 0) { renderDashboard(subs[0], access); return; }
   if (pending.length === 1) { loadAndRenderSub(pending[0], access); return; }
 
+  // Hide subscription switcher tabs — irrelevant during plan selection
+  const switcher = qs('sub-switcher-area');
+  if (switcher) switcher.style.display = 'none';
+
   const planIcons = { ship: '📬', scan: '🔍', none: '📦' };
 
   qs('content-area').innerHTML = `
@@ -936,6 +940,9 @@ function startPlanSetup(subscriptionId) {
   const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
   if (!sub) return;
   STATE.activeSub = sub;
+  // Restore switcher now that a plan is selected
+  const switcher = qs('sub-switcher-area');
+  if (switcher) switcher.style.display = '';
   renderSetup(sub, STATE.access);
 }
 
