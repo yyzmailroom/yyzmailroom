@@ -500,6 +500,37 @@
   .sub-pill.active.blocked { border-bottom-color:var(--red); }
   /* ── Plan card grid ─────────────────────────────────── */
   .plan-card-grid { display:flex; flex-direction:column; gap:12px; }
+
+  /* Plan selection screen */
+  .setup-selection-grid { display:flex; flex-direction:column; gap:14px; margin-top:8px; }
+  .setup-select-card {
+    background: var(--white);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .setup-select-card:hover {
+    border-color: var(--ink-3);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .setup-select-card .plan-icon { font-size: 28px; flex-shrink: 0; }
+  .setup-select-card .plan-info { flex: 1; min-width: 0; }
+  .setup-select-card .plan-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+  .setup-select-card .plan-meta  { font-size: 12px; color: var(--ink-4); }
+  .setup-select-card .setup-btn  {
+    font-size: 12px; font-weight: 600; padding: 8px 16px;
+    background: var(--ink); color: var(--white);
+    border: none; border-radius: var(--radius-sm);
+    cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    font-family: inherit;
+  }
+  .setup-select-card:hover .setup-btn { background: #111; }
   .plan-card-item { background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; }
   .plan-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
   .plan-card-name { font-size:14px; font-weight:600; color:var(--ink); }
@@ -712,7 +743,15 @@ function renderClient(access) {
   STATE.activeSub = best;
 
   renderSubscriptionSwitcher(access);
-  loadAndRenderSub(best, access);
+
+  // Check how many subs need setup
+  const pendingSetup = subs.filter(s => s.canAccess && s.setupRequired);
+  if (pendingSetup.length > 1) {
+    // Multiple plans need setup — show selection screen
+    renderPlanSelection(access);
+  } else {
+    loadAndRenderSub(best, access);
+  }
 }
 
 function renderSubscriptionSwitcher(access) {
@@ -844,6 +883,60 @@ function showBlocked(title, msg, btnLabel, btnUrl) {
         ${btn}
       </div>
     </div>`;
+}
+
+// ── Plan Selection Screen ─────────────────────────────────
+// Shows when client has 2+ pending plans. They pick which to set up.
+function renderPlanSelection(access) {
+  const subs = STATE.allSubs || [];
+
+  // Only show pending subs (no planCard yet or status = pending_setup)
+  const pending = subs.filter(s => s.canAccess && s.setupRequired);
+
+  // Should not land here with 0 or 1 pending — but guard anyway
+  if (pending.length === 0) { renderDashboard(subs[0], access); return; }
+  if (pending.length === 1) { loadAndRenderSub(pending[0], access); return; }
+
+  const planIcons = { ship: '📬', scan: '🔍', none: '📦' };
+
+  qs('content-area').innerHTML = `
+    <div class="onboarding" style="max-width:520px">
+      <div class="onboard-header">
+        <div class="onboard-step">Mailbox Setup</div>
+        <div class="onboard-title">Set up your plans</div>
+        <div class="onboard-sub">You have ${pending.length} plans ready to configure. Set them up one at a time.</div>
+      </div>
+      <div class="setup-selection-grid">
+        ${pending.map(sub => {
+          const planLabel  = (sub.planName || '').split('–')[0].trim();
+          const billing    = sub.interval === 'year' ? 'Yearly' : 'Monthly';
+          const amount     = sub.planAmount ? '$' + (sub.planAmount / 100).toFixed(2) + ' CAD / ' + (sub.interval === 'year' ? 'yr' : 'mo') : '';
+          const planLower  = (sub.planName || '').toLowerCase();
+          const icon       = planLower.includes('scan') ? '🔍'
+                           : planLower.includes('forward') ? '📬'
+                           : planLower.includes('core') ? '📪'
+                           : '✉️';
+          return `
+          <div class="setup-select-card" onclick="startPlanSetup('${sub.subscriptionId}')">
+            <div class="plan-icon">${icon}</div>
+            <div class="plan-info">
+              <div class="plan-title">${planLabel}</div>
+              <div class="plan-meta">${billing}${amount ? ' · ' + amount : ''}</div>
+            </div>
+            <button class="setup-btn" onclick="event.stopPropagation();startPlanSetup('${sub.subscriptionId}')">
+              Set Up →
+            </button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function startPlanSetup(subscriptionId) {
+  const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
+  if (!sub) return;
+  STATE.activeSub = sub;
+  renderSetup(sub, STATE.access);
 }
 
 // ── Setup Flow ────────────────────────────────────────────
@@ -1087,6 +1180,16 @@ function renderAddRecipient(sub, access, stepsHtml) {
 }
 
 function renderPendingActivation(sub, stepsHtml) {
+  // Check if there are other plans still pending setup
+  const morePending = (STATE.allSubs || []).filter(s =>
+    s.canAccess && s.setupRequired && s.subscriptionId !== sub.subscriptionId
+  );
+  const nextBtn = morePending.length > 0 ? `
+    <button onclick="renderPlanSelection(STATE.access)"
+      style="margin-top:20px;padding:10px 24px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+      Set Up Next Plan →
+    </button>` : '';
+
   qs('content-area').innerHTML = `
     <div class="onboarding">
       <div class="onboard-header">
@@ -1105,6 +1208,7 @@ function renderPendingActivation(sub, stepsHtml) {
         <p style="font-size:12px; color:var(--ink-4); margin-top:16px;">
           Plan: <strong>${sub.planName}</strong>
         </p>
+        ${nextBtn}
       </div>
     </div>`;
 }
