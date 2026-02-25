@@ -1026,37 +1026,56 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   const isYearly    = billingCycle === 'year';
 
   // Plan stats
-  const mailLimit    = parseInt(tmpl && tmpl.mailLimit       || 0);
-  const parcelLimit  = parseInt(tmpl && tmpl.parcelsIncluded || 0);
-  const mailFee      = tmpl && tmpl.mailOverageFee   ? '$' + parseFloat(tmpl.mailOverageFee).toFixed(2)   : null;
-  const parcelFee    = tmpl && tmpl.parcelOverageFee ? '$' + parseFloat(tmpl.parcelOverageFee).toFixed(2) : null;
-  const mailStorage  = parseInt(tmpl && tmpl.mailStorageDays   || 30);
-  const parcelStorage= parseInt(tmpl && tmpl.parcelStorageDays || 7);
+  const mailLimit     = parseInt(tmpl && tmpl.mailLimit        || 0);
+  const parcelLimit   = parseInt(tmpl && tmpl.parcelsIncluded  || 0);
+  const hasParcel     = parcelLimit > 0;
+  const mailFee       = tmpl && parseFloat(tmpl.mailOverageFee)   > 0 ? '$' + parseFloat(tmpl.mailOverageFee).toFixed(2)   : null;
+  const parcelFee     = tmpl && parseFloat(tmpl.parcelOverageFee) > 0 ? '$' + parseFloat(tmpl.parcelOverageFee).toFixed(2) : null;
+  const mailStorage   = parseInt(tmpl && tmpl.mailStorageDays   || 30);
+  const parcelStorage = parseInt(tmpl && tmpl.parcelStorageDays || 7);
+  const planMemo      = tmpl && tmpl.planMemo ? tmpl.planMemo.trim() : '';
 
-  // Plan summary rows
-  const summaryRows = [
-    { label: 'Mail included',    value: mailLimit   ? mailLimit + ' pieces / ' + billingCycle : 'Unlimited' },
-    parcelLimit > 0
-      ? { label: 'Parcels included', value: parcelLimit + ' / ' + billingCycle }
-      : { label: 'Parcel handling',  value: 'Not included' },
-    mailFee
-      ? { label: 'Mail overage',     value: mailFee + ' per piece' }
-      : { label: 'Mail overage',     value: 'N/A — not supported' },
-    parcelFee && parcelLimit > 0
-      ? { label: 'Parcel overage',   value: parcelFee + ' per parcel' }
-      : null,
-    { label: 'Mail storage',     value: mailStorage + ' days' },
-    parcelLimit > 0 ? { label: 'Parcel storage', value: parcelStorage + ' days' } : null,
-  ].filter(Boolean);
+  // ── Mail section rows ──
+  const mailRows = [
+    { label: 'Mail included',  value: mailLimit ? mailLimit + ' letters / ' + billingCycle : 'Unlimited' },
+    { label: 'Mail storage',   value: mailStorage + ' days' },
+    { label: 'Mail overage',   value: mailFee ? mailFee + ' / letter' : 'N/A' },
+  ];
+
+  // ── Parcel section rows ──
+  const parcelRows = hasParcel ? [
+    { label: 'Parcels included', value: parcelLimit + ' parcels / ' + billingCycle },
+    { label: 'Parcel storage',   value: parcelStorage + ' days' },
+    { label: 'Parcel overage',   value: parcelFee ? parcelFee + ' / parcel' : 'N/A' },
+  ] : [
+    { label: 'Parcels', value: 'Not supported on this plan' },
+  ];
+
+  const renderRow = (r, last) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+      ${last ? '' : 'border-bottom:1px solid var(--border);'}font-size:12px">
+      <span style="color:var(--ink-3)">${r.label}</span>
+      <span style="font-weight:500;color:var(--ink)">${r.value}</span>
+    </div>`;
+
+  // planMemo blurb — shown right below plan title
+  const memoHtml = planMemo ? `
+    <div style="font-size:12px;color:var(--ink-3);line-height:1.6;padding:10px 14px;
+      background:var(--bg);border-left:3px solid var(--border);border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+      margin-bottom:16px">${planMemo}</div>` : '';
 
   const summaryHtml = `
-    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:20px">
-      <div style="font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">${planLabel} Plan Details</div>
-      ${summaryRows.map(r => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-          <span style="color:var(--ink-3)">${r.label}</span>
-          <span style="font-weight:500;color:var(--ink)">${r.value}</span>
-        </div>`).join('')}
+    <div style="margin-bottom:20px">
+      <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;
+          letter-spacing:.05em;margin-bottom:8px">✉️ Mail</div>
+        ${mailRows.map((r, i) => renderRow(r, i === mailRows.length - 1)).join('')}
+      </div>
+      <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px 16px">
+        <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;
+          letter-spacing:.05em;margin-bottom:8px">📦 Parcels</div>
+        ${parcelRows.map((r, i) => renderRow(r, i === parcelRows.length - 1)).join('')}
+      </div>
     </div>`;
 
   // Location picker
@@ -1166,6 +1185,7 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       <div class="onboard-card">
         <form id="onboard-form">
 
+          ${memoHtml}
           ${summaryHtml}
           ${scanHtml}
 
