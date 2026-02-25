@@ -991,28 +991,196 @@ function goBackToPlanSelection() {
   renderPlanSelection(STATE.access);
 }
 
-function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
+async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
+  // Show loading state while fetching plan template
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
         ${backBtn}
         <div class="onboard-step">Step 1 of 3 — Plan Setup</div>
         <div class="onboard-title">Set up your mailbox</div>
-        <div class="onboard-sub">Tell us a bit about yourself and where to forward your mail.</div>
+      </div>
+      <div class="onboard-card" style="padding:40px;text-align:center">
+        <div class="shimmer-line" style="width:60%;margin:0 auto 12px"></div>
+        <div class="shimmer-line med" style="width:40%;margin:0 auto"></div>
+      </div>
+    </div>`;
+
+  // Fetch plan template + resolved locations
+  let tmpl = null, locations = [];
+  try {
+    const productId = sub.productId || '';
+    const res = await apiPost({ action: 'getPlanTemplate', uuid: STATE.uuid, productId });
+    if (res.status === 'ok') {
+      tmpl      = res.template   || null;
+      locations = res.locations  || [];
+    }
+  } catch(e) { /* fallback to blank form */ }
+
+  const feature     = tmpl ? (tmpl.autoFeature || 'none').toLowerCase() : 'none';
+  const isShip      = feature === 'ship';
+  const isScan      = feature === 'scan';
+  const isNone      = !isShip && !isScan;
+  const planLabel   = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
+  const billingCycle = (sub.interval === 'year') ? 'year' : 'month';
+  const isYearly    = billingCycle === 'year';
+
+  // Plan stats
+  const mailLimit    = parseInt(tmpl && tmpl.mailLimit       || 0);
+  const parcelLimit  = parseInt(tmpl && tmpl.parcelsIncluded || 0);
+  const mailFee      = tmpl && tmpl.mailOverageFee   ? '$' + parseFloat(tmpl.mailOverageFee).toFixed(2)   : null;
+  const parcelFee    = tmpl && tmpl.parcelOverageFee ? '$' + parseFloat(tmpl.parcelOverageFee).toFixed(2) : null;
+  const mailStorage  = parseInt(tmpl && tmpl.mailStorageDays   || 30);
+  const parcelStorage= parseInt(tmpl && tmpl.parcelStorageDays || 7);
+
+  // Plan summary rows
+  const summaryRows = [
+    { label: 'Mail included',    value: mailLimit   ? mailLimit + ' pieces / ' + billingCycle : 'Unlimited' },
+    parcelLimit > 0
+      ? { label: 'Parcels included', value: parcelLimit + ' / ' + billingCycle }
+      : { label: 'Parcel handling',  value: 'Not included' },
+    mailFee
+      ? { label: 'Mail overage',     value: mailFee + ' per piece' }
+      : { label: 'Mail overage',     value: 'N/A — not supported' },
+    parcelFee && parcelLimit > 0
+      ? { label: 'Parcel overage',   value: parcelFee + ' per parcel' }
+      : null,
+    { label: 'Mail storage',     value: mailStorage + ' days' },
+    parcelLimit > 0 ? { label: 'Parcel storage', value: parcelStorage + ' days' } : null,
+  ].filter(Boolean);
+
+  const summaryHtml = `
+    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:20px">
+      <div style="font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">${planLabel} Plan Details</div>
+      ${summaryRows.map(r => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="color:var(--ink-3)">${r.label}</span>
+          <span style="font-weight:500;color:var(--ink)">${r.value}</span>
+        </div>`).join('')}
+    </div>`;
+
+  // Location picker
+  let locationHtml = '';
+  if (locations.length === 0) {
+    locationHtml = `<input type="hidden" id="ob-location" value="">`;
+  } else if (locations.length === 1) {
+    const loc = locations[0];
+    const addr = [loc.address, loc.city, loc.province, loc.postalCode].filter(Boolean).join(', ');
+    locationHtml = `
+      <input type="hidden" id="ob-location" value="${loc.locationId}">
+      <div class="form-group">
+        <label>Your Virtual Office Address</label>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;font-size:13px">
+          <div style="font-weight:600;color:var(--ink);margin-bottom:2px">${loc.name}</div>
+          <div style="color:var(--ink-3)">${addr}</div>
+          ${loc.hours ? `<div style="font-size:11px;color:var(--ink-4);margin-top:4px">🕐 ${loc.hours}</div>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--ink-4);margin-top:4px">This is the address registered mailbox address for this plan.</div>
+      </div>`;
+  } else {
+    locationHtml = `
+      <div class="form-group">
+        <label>Select Your Location</label>
+        <div style="display:flex;flex-direction:column;gap:10px" id="ob-location-list">
+          ${locations.map((loc, i) => {
+            const addr = [loc.address, loc.city, loc.province, loc.postalCode].filter(Boolean).join(', ');
+            return `
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:border-color .15s"
+              onclick="document.querySelectorAll('#ob-location-list label').forEach(l=>l.style.borderColor='var(--border)');this.style.borderColor='var(--ink)';document.getElementById('ob-location').value='${loc.locationId}'">
+              <input type="radio" name="ob-loc-radio" value="${loc.locationId}" ${i===0?'checked':''} style="margin-top:2px;accent-color:var(--ink)">
+              <div>
+                <div style="font-weight:600;font-size:13px;color:var(--ink)">${loc.name}</div>
+                <div style="font-size:12px;color:var(--ink-3)">${addr}</div>
+                ${loc.hours ? `<div style="font-size:11px;color:var(--ink-4);margin-top:2px">🕐 ${loc.hours}</div>` : ''}
+              </div>
+            </label>`;
+          }).join('')}
+        </div>
+        <input type="hidden" id="ob-location" value="${locations[0].locationId}">
+      </div>`;
+  }
+
+  // Forwarding address section — only for ship plans
+  const fwdHtml = isShip ? `
+    <div class="form-divider">Forwarding Address</div>
+    <div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.5">
+      Your mail will be forwarded to this address during the first week of each month.
+    </div>
+    <div class="form-group">
+      <label>Street Address</label>
+      <input type="text" id="ob-addr" placeholder="123 Main Street" required>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>City</label>
+        <input type="text" id="ob-city" placeholder="Toronto" required>
+      </div>
+      <div class="form-group">
+        <label>Province / State</label>
+        <input type="text" id="ob-province" placeholder="ON" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Postal / ZIP Code</label>
+        <input type="text" id="ob-postal" placeholder="M5H 2S3" required>
+      </div>
+      <div class="form-group">
+        <label>Country</label>
+        <input type="text" id="ob-country" value="Canada" required>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Forwarding Instructions <span style="color:var(--ink-4)">(optional)</span></label>
+      <textarea id="ob-instructions" placeholder="e.g. Signature required, leave at front desk..."></textarea>
+    </div>` : `
+    <input type="hidden" id="ob-addr" value="">
+    <input type="hidden" id="ob-city" value="">
+    <input type="hidden" id="ob-province" value="">
+    <input type="hidden" id="ob-postal" value="">
+    <input type="hidden" id="ob-country" value="">
+    <input type="hidden" id="ob-instructions" value="">`;
+
+  // Scan notice — only for scan plans
+  const scanHtml = isScan ? `
+    <div style="background:#E8F5EE;border:1px solid rgba(34,139,34,0.2);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:20px;display:flex;gap:10px;align-items:flex-start">
+      <div style="font-size:18px;flex-shrink:0">🔍</div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#1a5c2a;margin-bottom:4px">Scan Plan — Digital Delivery</div>
+        <div style="font-size:12px;color:#2d7a3a;line-height:1.5">
+          Your mail will be scanned and sent digitally to <strong>${access.email || 'your email address'}</strong>.
+          You can update your email address anytime in your account settings.
+        </div>
+      </div>
+    </div>` : '';
+
+  qs('content-area').innerHTML = `
+    <div class="onboarding" id="setup-section">
+      <div class="onboard-header">
+        ${backBtn}
+        <div class="onboard-step">Step 1 of 3 — Plan Setup</div>
+        <div class="onboard-title">Set up your mailbox</div>
+        <div class="onboard-sub">Configure your ${planLabel} plan.</div>
       </div>
       <div class="steps">${stepsHtml}</div>
       <div class="onboard-card">
         <form id="onboard-form">
 
+          ${summaryHtml}
+          ${scanHtml}
+
+          <div class="form-divider">Mailbox Location</div>
+          ${locationHtml}
+
           <div class="form-divider">Business Information</div>
           <div class="form-group">
             <label>Plan Nickname <span style="color:var(--ink-4)">(optional)</span></label>
-            <input type="text" id="ob-friendly-name" placeholder="e.g. John&apos;s Company, Landscaping LTD">
+            <input type="text" id="ob-friendly-name" placeholder="e.g. John's Company, Landscaping LTD">
             <div style="font-size:11px;color:var(--ink-4);margin-top:4px">A personal name for this mailbox. Shown instead of the plan name.</div>
           </div>
           <div class="form-group">
             <label>Business Description <span style="color:var(--ink-4)">(one sentence)</span></label>
-            <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs" required>
+            <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs">
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -1036,46 +1204,12 @@ function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
             </div>
           </div>
 
-          <div class="form-divider">Forwarding Address</div>
-          <div class="form-group">
-            <label>Street Address</label>
-            <input type="text" id="ob-addr" placeholder="123 Main Street" required>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>City</label>
-              <input type="text" id="ob-city" placeholder="Toronto" required>
-            </div>
-            <div class="form-group">
-              <label>Province / State</label>
-              <input type="text" id="ob-province" placeholder="ON" required>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Postal / ZIP Code</label>
-              <input type="text" id="ob-postal" placeholder="M5H 2S3" required>
-            </div>
-            <div class="form-group">
-              <label>Country</label>
-              <input type="text" id="ob-country" value="Canada" required>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Forwarding Instructions <span style="color:var(--ink-4)">(optional)</span></label>
-            <textarea id="ob-instructions" placeholder="e.g. Signature required, leave at front desk..."></textarea>
-          </div>
+          ${fwdHtml}
 
           <div class="form-divider">Special Instructions</div>
           <div class="form-group">
             <label>Any special instructions for our team? <span style="color:var(--ink-4)">(optional)</span></label>
-            <textarea id="ob-special" placeholder="e.g. Always notify immediately, scan all mail..."></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>Plan Nickname <span style="color:var(--ink-4)">(optional)</span></label>
-            <input type="text" id="ob-friendly" placeholder="e.g. Main Corp, Holding Co, Client A">
-            <div style="font-size:11px;color:var(--ink-4);margin-top:4px">Give this plan a custom name — shows in your dashboard instead of the plan type.</div>
+            <textarea id="ob-special" placeholder="e.g. Always notify immediately upon arrival..."></textarea>
           </div>
 
           <button type="submit" class="btn btn-primary btn-full" id="ob-submit">
@@ -1091,33 +1225,38 @@ function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span> Saving...';
 
+    const locationId = (qs('ob-location') && qs('ob-location').value) || '';
+    if (!locationId && locations.length > 0) {
+      toast('Please select a location.', 'error');
+      btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
+    }
+
     try {
       const result = await apiPost({
         action:              'submitOnboarding',
         uuid:                STATE.uuid,
         subscriptionId:      sub.subscriptionId,
         productId:           sub.productId || extractProductId(sub),
-        locationId:          'LOC001',
-        forwardingAddress:   qs('ob-addr').value,
-        forwardingCity:      qs('ob-city').value,
-        forwardingProvince:  qs('ob-province').value,
-        forwardingPostalCode:qs('ob-postal').value,
-        forwardingCountry:   qs('ob-country').value,
-        forwardingInstructions: qs('ob-instructions').value,
-        clientCountry:       qs('ob-country').value,
-        clientProvince:      qs('ob-province').value,
-        clientCity:          qs('ob-city').value,
-        clientTimezone:      'America/Toronto',
-        businessDescription: qs('ob-biz').value,
-        referralSource:      qs('ob-referral').value,
+        locationId:          locationId,
+        forwardingAddress:   qs('ob-addr') ? qs('ob-addr').value : '',
+        forwardingCity:      qs('ob-city') ? qs('ob-city').value : '',
+        forwardingProvince:  qs('ob-province') ? qs('ob-province').value : '',
+        forwardingPostalCode:qs('ob-postal') ? qs('ob-postal').value : '',
+        forwardingCountry:   qs('ob-country') ? qs('ob-country').value : '',
+        forwardingInstructions: qs('ob-instructions') ? qs('ob-instructions').value : '',
+        clientCountry:       qs('ob-country') ? qs('ob-country').value : '',
+        clientProvince:      qs('ob-province') ? qs('ob-province').value : '',
+        clientCity:          qs('ob-city') ? qs('ob-city').value : '',
+        clientTimezone:      Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto',
+        businessDescription: qs('ob-biz') ? qs('ob-biz').value : '',
+        referralSource:      qs('ob-referral') ? qs('ob-referral').value : '',
         friendlyName:        qs('ob-friendly-name') ? qs('ob-friendly-name').value.trim() : '',
-        preferredPickupTime: qs('ob-pickup').value,
-        specialInstructions: qs('ob-special').value
+        preferredPickupTime: qs('ob-pickup') ? qs('ob-pickup').value : '',
+        specialInstructions: qs('ob-special') ? qs('ob-special').value : ''
       });
 
       if (result.status === 'ok') {
         toast('Plan set up successfully!', 'success');
-        // Refresh access
         setTimeout(() => location.reload(), 800);
       } else {
         throw new Error(result.message || 'Setup failed');
@@ -1137,44 +1276,68 @@ function extractProductId(sub) {
 }
 
 function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
+  // planCard may already be cached — grab maxRecipients from it
+  const pc        = STATE.planCard || STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId] || null;
+  const maxR      = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
+  const planLabel = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
+
+  // Build N recipient slot forms
+  const slots = Array.from({ length: maxR }, (_, i) => {
+    const isFirst = i === 0;
+    const label   = maxR === 1 ? 'Recipient' : `Recipient ${i + 1}${isFirst ? ' (required)' : ' (optional)'}`;
+    return `
+      <div class="recipient-slot" id="rec-slot-${i}" style="${i > 0 ? 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' : ''}">
+        ${maxR > 1 ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);margin-bottom:10px">${label}</div>` : ''}
+        <div class="form-row">
+          <div class="form-group">
+            <label>Full Name${isFirst ? '' : ' <span style="color:var(--ink-4)">(optional)</span>'}</label>
+            <input type="text" id="rc-name-${i}" placeholder="Jane Smith" ${isFirst ? 'required' : ''}>
+          </div>
+          <div class="form-group">
+            <label>Company <span style="color:var(--ink-4)">(optional)</span></label>
+            <input type="text" id="rc-company-${i}" placeholder="Acme Corp">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type</label>
+            <select id="rc-type-${i}">
+              <option value="individual">Individual</option>
+              <option value="company">Company</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Language</label>
+            <select id="rc-lang-${i}">
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Info banner
+  const limitNote = maxR === 1
+    ? 'Your plan supports 1 recipient.'
+    : `Your ${planLabel} plan supports up to <strong>${maxR} recipients</strong>. Add as many as you need now — you can always add more later.`;
+
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
         ${backBtn}
-        <div class="onboard-step">Step 2 of 3 — Add Recipient</div>
+        <div class="onboard-step">Step 2 of 3 — Add Recipients</div>
         <div class="onboard-title">Who will receive mail?</div>
-        <div class="onboard-sub">Add at least one recipient name. This is the name that will appear on your mail.</div>
+        <div class="onboard-sub">These names will appear on mail delivered to your address.</div>
       </div>
       <div class="steps">${stepsHtml}</div>
       <div class="onboard-card">
+        <div style="font-size:12px;color:var(--ink-3);background:var(--bg);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:20px">
+          ${limitNote}
+        </div>
         <form id="recipient-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Full Name</label>
-              <input type="text" id="rc-name" placeholder="Jane Smith" required>
-            </div>
-            <div class="form-group">
-              <label>Company Name <span style="color:var(--ink-4)">(optional)</span></label>
-              <input type="text" id="rc-company" placeholder="Acme Corp">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>Type</label>
-              <select id="rc-type">
-                <option value="individual">Individual</option>
-                <option value="company">Company</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Notification Language</label>
-              <select id="rc-lang">
-                <option value="en">English</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" class="btn btn-primary btn-full" id="rc-submit">
-            Add Recipient & Activate
+          ${slots}
+          <button type="submit" class="btn btn-primary btn-full" id="rc-submit" style="margin-top:20px">
+            ${maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue'}
           </button>
         </form>
       </div>
@@ -1186,1229 +1349,49 @@ function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-spinner"></span> Saving...';
 
-    try {
-      const result = await apiPost({
-        action:      'addRecipient',
-        uuid:        STATE.uuid,
-        planCardId:  sub.planCardId,
-        name:        qs('rc-name').value,
-        companyName: qs('rc-company').value,
-        type:        qs('rc-type').value,
-        language:    qs('rc-lang').value,
+    // Collect all filled slots
+    const recipients = [];
+    for (let i = 0; i < maxR; i++) {
+      const name = qs('rc-name-' + i) && qs('rc-name-' + i).value.trim();
+      if (!name) continue; // skip empty optional slots
+      recipients.push({
+        name,
+        companyName:     qs('rc-company-' + i) ? qs('rc-company-' + i).value.trim() : '',
+        type:            qs('rc-type-' + i) ? qs('rc-type-' + i).value : 'individual',
+        language:        qs('rc-lang-' + i) ? qs('rc-lang-' + i).value : 'en',
         notifyOnArrival: true
       });
+    }
 
-      if (result.status === 'ok') {
-        toast('Recipient added! Awaiting staff activation.', 'success');
-        setTimeout(() => location.reload(), 1000);
-      } else {
-        throw new Error(result.message || 'Failed to add recipient');
+    if (recipients.length === 0) {
+      toast('Please add at least one recipient name.', 'error');
+      btn.disabled = false;
+      btn.innerHTML = maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue';
+      return;
+    }
+
+    try {
+      // Submit recipients one by one — server handles each
+      for (const rec of recipients) {
+        const result = await apiPost({
+          action:          'addRecipient',
+          uuid:            STATE.uuid,
+          planCardId:      sub.planCardId,
+          name:            rec.name,
+          companyName:     rec.companyName,
+          type:            rec.type,
+          language:        rec.language,
+          notifyOnArrival: rec.notifyOnArrival
+        });
+        if (result.status !== 'ok') throw new Error(result.message || 'Failed to add recipient: ' + rec.name);
       }
+
+      toast('Recipient' + (recipients.length > 1 ? 's' : '') + ' added!', 'success');
+      setTimeout(() => location.reload(), 800);
     } catch (err) {
       toast(err.message, 'error');
       btn.disabled = false;
-      btn.innerHTML = 'Add Recipient & Activate';
+      btn.innerHTML = maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue';
     }
   });
 }
-
-function renderPendingActivation(sub, stepsHtml, backBtn = '') {
-  // Check if there are other plans still pending setup
-  const morePending = (STATE.allSubs || []).filter(s =>
-    s.canAccess && s.setupRequired && s.subscriptionId !== sub.subscriptionId
-  );
-  const nextBtn = morePending.length > 0 ? `
-    <button onclick="renderPlanSelection(STATE.access)"
-      style="margin-top:20px;padding:10px 24px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
-      Set Up Next Plan →
-    </button>` : '';
-
-  qs('content-area').innerHTML = `
-    <div class="onboarding">
-      <div class="onboard-header">
-        ${backBtn}
-        <div class="onboard-step">Step 3 of 3 — Activation</div>
-        <div class="onboard-title">Almost there!</div>
-        <div class="onboard-sub">Our team is reviewing your mailbox setup. You'll receive a confirmation once activated.</div>
-      </div>
-      <div class="steps">${stepsHtml}</div>
-      <div class="onboard-card" style="text-align:center; padding: 40px 24px;">
-        <div style="font-size:40px; margin-bottom:16px;">⏳</div>
-        <div style="font-size:15px; font-weight:600; color:var(--ink); margin-bottom:8px;">Pending Activation</div>
-        <p style="font-size:13px; color:var(--ink-3); line-height:1.6;">
-          Your recipient has been submitted and is pending review by our team.
-          This usually takes less than one business day.
-        </p>
-        <p style="font-size:12px; color:var(--ink-4); margin-top:16px;">
-          Plan: <strong>${sub.planName}</strong>
-        </p>
-        ${nextBtn}
-      </div>
-    </div>`;
-}
-
-// ── Skeleton HTML ─────────────────────────────────────────
-function skeletonCard(lines = 2) {
-  const bars = Array(lines).fill(0).map((_, i) =>
-    `<div style="height:${i===0?'28px':'12px'};width:${i===0?'40%':Math.floor(50+Math.random()*40)+'%'};background:var(--bg-2);border-radius:4px;margin-bottom:8px;animation:pulse 1.4s ease infinite ${i*0.15}s"></div>`
-  ).join('');
-  return `<div style="padding:16px">${bars}</div>`;
-}
-
-// ── Dashboard ─────────────────────────────────────────────
-async function renderDashboard(sub, access) {
-  // Render shell + skeleton instantly — zero wait
-  qs('content-area').innerHTML = `
-    <div id="tabs-bar">
-      <div class="tabs">
-        <div class="tab active" onclick="switchTab('mail')"  id="tab-mail">Mail Log</div>
-        <div class="tab"        onclick="switchTab('plan')"  id="tab-plan">My Plan</div>
-        <div class="tab"        onclick="switchTab('agents')" id="tab-agents">Pickup Agents</div>
-      </div>
-    </div>
-    <div class="main" id="dashboard-content">
-      <div class="stats-row" style="margin-bottom:20px">
-        ${[0,1,2,3].map(() => `<div class="stat-card">${skeletonCard(2)}</div>`).join('')}
-      </div>
-      <div class="card">${skeletonCard(4)}</div>
-    </div>`;
-
-  // All 3 fetches fire simultaneously
-  const [mailData, planData, recipientData, agentData] = await Promise.allSettled([
-    api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`),
-    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`) : Promise.resolve(null),
-    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`) : Promise.resolve(null),
-    sub.planCardId ? api(`uuid=${STATE.uuid}&action=getAgents&planCardId=${sub.planCardId}`) : Promise.resolve(null)
-  ]);
-
-  STATE.mailLog    = mailData.status === 'fulfilled' ? ((mailData.value.mailLog || []).filter(m => m.mailId)) : [];
-  STATE.planCard   = planData.status === 'fulfilled' && planData.value ? planData.value.planCard : null;
-  STATE.recipients = recipientData.status === 'fulfilled' && recipientData.value ? (recipientData.value.recipients || []) : [];
-  STATE.agents     = agentData.status === 'fulfilled' && agentData.value ? (agentData.value.agents || []) : [];
-
-  renderMailTab(sub, access);
-}
-
-function switchTab(tab) {
-  STATE.activeTab = tab;
-  ['mail','plan','agents'].forEach(t => {
-    const el = qs('tab-' + t);
-    if (el) el.classList.toggle('active', t === tab);
-  });
-  const sub = STATE.activeSub;
-  const access = STATE.access;
-  if (tab === 'mail')   renderMailTab(sub, access);
-  if (tab === 'plan')   renderPlansTab(sub, access);
-  if (tab === 'agents') renderAgentsTab(sub, access);
-}
-
-function renderMailTab(sub, access) {
-  const dc     = qs('dashboard-content');
-  const mailLog = STATE.mailLog || [];
-
-  // Stats — only show if single plan, otherwise skip Mail This Period
-  const allSubs = STATE.allSubs || [sub];
-  const multiPlan = allSubs.length > 1;
-  const pc = STATE.planCard;
-
-  const readyPickup = mailLog.filter(m => ['arrived','scanned','stored'].includes(m.status)).length;
-  const dueSoon     = mailLog.filter(m => {
-    const d = daysUntil(m.storageDueDate);
-    return d !== null && d >= 0 && d <= 5 && !['picked_up','forwarded','shredded','discarded'].includes(m.status);
-  }).length;
-  const forwarded   = mailLog.filter(m => m.status === 'forwarded').length;
-
-  const statsHtml = multiPlan
-    ? `<div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card ${readyPickup > 0 ? 'blue' : ''}">
-          <div class="stat-label">Ready for Pickup</div>
-          <div class="stat-value">${readyPickup}</div>
-          <div class="stat-sub">${readyPickup > 0 ? 'items waiting' : 'all clear'}</div>
-        </div>
-        <div class="stat-card ${dueSoon > 0 ? 'amber' : ''}">
-          <div class="stat-label">Expiring Soon</div>
-          <div class="stat-value">${dueSoon}</div>
-          <div class="stat-sub">${dueSoon > 0 ? 'within 5 days' : 'nothing urgent'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">Forwarded</div>
-          <div class="stat-value">${forwarded}</div>
-          <div class="stat-sub">this period</div>
-        </div>
-      </div>`
-    : (() => {
-        const mailsUsed  = pc ? (parseInt(pc.mailsUsed)  || 0) : 0;
-        const mailLimit  = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
-        const usePct     = mailLimit ? Math.min(100, Math.round(mailsUsed / mailLimit * 100)) : 0;
-        const barClass   = usePct < 60 ? 'safe' : usePct < 85 ? 'warn' : 'danger';
-        return `<div class="stats-row" style="margin-bottom:20px">
-          <div class="stat-card accent">
-            <div class="stat-label">Mail This Period</div>
-            <div class="stat-value">${mailsUsed}</div>
-            <div class="stat-sub">of <strong>${mailLimit || '—'}</strong> included</div>
-            <div class="usage-bar"><div class="usage-bar-fill ${barClass}" style="width:${usePct}%"></div></div>
-          </div>
-          <div class="stat-card ${readyPickup > 0 ? 'blue' : ''}">
-            <div class="stat-label">Ready for Pickup</div>
-            <div class="stat-value">${readyPickup}</div>
-            <div class="stat-sub">${readyPickup > 0 ? 'items waiting' : 'all clear'}</div>
-          </div>
-          <div class="stat-card ${dueSoon > 0 ? 'amber' : ''}">
-            <div class="stat-label">Expiring Soon</div>
-            <div class="stat-value">${dueSoon}</div>
-            <div class="stat-sub">${dueSoon > 0 ? 'within 5 days' : 'nothing urgent'}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Forwarded</div>
-            <div class="stat-value">${forwarded}</div>
-            <div class="stat-sub">this period</div>
-          </div>
-        </div>`;
-      })();
-
-  // Virtual office address — from planCard or default
-  const voAddress = (pc && pc.locationAddress) ? pc.locationAddress
-    : '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
-
-  dc.innerHTML = `
-    <div>
-      ${statsHtml}
-      <div id="addr-copy-box" onclick="copyMailingAddress('${voAddress.replace(/'/g, "\\'")}', this)"
-        style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;cursor:pointer;transition:border-color .15s,background .15s;user-select:none"
-        onmouseover="this.style.borderColor='var(--blue)';this.style.background='rgba(59,130,246,0.04)'"
-        onmouseout="if(!this.dataset.copied){this.style.borderColor='var(--border)';this.style.background='var(--bg)';}">
-        <span style="font-size:18px">✉</span>
-        <div style="flex:1">
-          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-4)">Your Registered Mailing Address</div>
-          <div style="font-size:13px;font-weight:500;color:var(--ink-1);margin-top:2px;line-height:1.4">${voAddress}</div>
-        </div>
-        <div id="addr-copy-btn" style="flex-shrink:0;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-3);background:var(--white);border:1px solid var(--border);border-radius:6px;padding:5px 10px;transition:all .15s">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M3 11V3a1 1 0 011-1h8"/></svg>
-          Copy
-        </div>
-      </div>
-      <div class="section-header" style="margin-bottom:12px">
-        <div class="section-title">Mail Log</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select id="mail-status-filter" onchange="applyMailFilter()"
-            style="padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit;background:var(--white);color:var(--ink-2)">
-            <option value="">All</option>
-            <option value="pending_pickup">Pending Pickup</option>
-            <option value="arrived">Arrived</option>
-            <option value="scanned">Scanned</option>
-            <option value="stored">Stored</option>
-            <option value="forwarded">Forwarded</option>
-            <option value="picked_up">Picked Up</option>
-            <option value="shredded">Shredded</option>
-          </select>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-              <div class="section-action" onclick="refreshMailLog()" id="refresh-btn" style="cursor:pointer">↻</div>
-              <div id="mail-refresh-ts" style="font-size:10px;color:var(--ink-4)"></div>
-            </div>
-        </div>
-      </div>
-      <div id="mail-list-container">
-        ${renderMailList(mailLog, sub, '')}
-      </div>
-    </div>`;
-}
-
-function applyMailFilter() {
-  const filter = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
-  const container = qs('mail-list-container');
-  if (container) container.innerHTML = renderMailList(STATE.mailLog || [], STATE.activeSub, filter);
-}
-
-
-// ── Init ─────────────────────────────────────────────────
-function renderMailList(mailLog, sub, statusFilter) {
-  const blurred   = !sub.canAccess;
-  // Merge plan card fields — autoFeature is source of truth for features
-  const pc          = STATE.planCard || {};
-  // autoFeature: 'none' | 'scan' | 'ship' — from Plans sheet via buildSubAccess
-  const autoFeature = (pc.autoFeature || sub.autoFeature || 'none').toLowerCase();
-  const hasScan     = autoFeature === 'scan';
-  const hasShip     = autoFeature === 'ship';  // auto-forward (letters only, never parcels)
-  const hasFwd      = autoFeature === 'ship';
-
-  if (!mailLog.length) return `
-    <div class="card">
-      <div class="empty-state">
-        <div class="empty-icon">✉</div>
-        <div class="empty-title">No mail yet</div>
-        <div class="empty-sub">Your mail log will appear here once items are received.</div>
-      </div>
-    </div>`;
-
-  const priority = s => (['arrived','scanned','stored'].includes(s) ? 0 : s === 'forwarding_pending' ? 1 : s === 'forwarded' ? 2 : 3);
-  let sorted = [...mailLog].sort((a,b) => {
-    const pd = priority(a.status) - priority(b.status);
-    if (pd !== 0) return pd;
-    return new Date(b.loggedAt) - new Date(a.loggedAt);
-  });
-
-  if (statusFilter) {
-    if (statusFilter === 'pending_pickup') {
-      sorted = sorted.filter(m => ['arrived','scanned','stored','forwarding_pending'].includes(m.status));
-    } else {
-      sorted = sorted.filter(m => m.status === statusFilter);
-    }
-  }
-
-  if (!sorted.length) return `
-    <div class="card" style="padding:32px;text-align:center">
-      <div style="color:var(--ink-4);font-size:13px">No mail matches this filter.</div>
-    </div>`;
-
-  const buildItem = (m, isReleased) => {
-    const isParcel   = m.type === 'parcel';
-    const icon       = isParcel ? '📦' : '✉️';
-    const days       = daysUntil(m.storageDueDate);
-    const isActive   = ['arrived','scanned','stored'].includes(m.status);
-    const isConf     = m.confidential === 'TRUE' || m.confidential === true;
-    const isFwdPend  = m.status === 'forwarding_pending';
-    const isForwarded = m.status === 'forwarded';
-
-    // — Scan URL (visible if plan has scanning and URL exists)
-    const scanHtml = hasScan && m.scanImageUrl
-      ? `<div style="margin-top:5px">
-          <a href="${m.scanImageUrl}" target="_blank"
-             style="font-size:12px;color:var(--blue);font-weight:500;text-decoration:none">
-            🔍 View Scan ↗
-          </a>
-        </div>` : '';
-
-    // — Confidential notice
-    const confNotice = isConf
-      ? `<div style="font-size:11px;background:#FFF8EC;color:#92600A;padding:4px 8px;border-radius:6px;margin-top:5px;font-weight:500">
-          🔒 Confidential — pickup only. No scan or forward.
-        </div>` : '';
-
-    // — Forwarding status (parcels are NEVER auto-forwarded — pickup only)
-    let fwdHtml = '';
-    if (!isConf && !isParcel && hasShip && isActive) {
-      const nextMonth = new Date(); nextMonth.setMonth(nextMonth.getMonth()+1);
-      const monthName = nextMonth.toLocaleString('en-CA',{month:'long'});
-      fwdHtml = `<div style="font-size:11px;color:var(--blue);margin-top:4px">
-        Will be forwarded — first week of ${monthName}
-      </div>`;
-    }
-    if (isParcel && isActive) {
-      fwdHtml = `<div style="font-size:11px;color:var(--amber);margin-top:4px">
-        📦 Parcel — pickup only (not forwarded)
-      </div>`;
-    }
-    if (isFwdPend) {
-      fwdHtml = `<div style="font-size:11px;color:var(--blue);font-weight:500;margin-top:4px">
-        Forwarding in progress…
-      </div>`;
-    }
-    if (isForwarded && m.trackingLink) {
-      fwdHtml = `<div style="margin-top:5px">
-        <a href="${m.trackingLink}" target="_blank"
-           style="font-size:12px;color:var(--green);font-weight:500;text-decoration:none">
-          📦 Track your shipment ↗
-        </a>
-      </div>`;
-    } else if (isForwarded) {
-      fwdHtml = `<div style="font-size:11px;color:var(--green);margin-top:4px">✓ Forwarded</div>`;
-    }
-
-    // — Storage countdown (only show if item will actually be shredded)
-    // Forwarding plans don't shred; scan plans do; pickup plans do
-    const willShred = isParcel ? true : (!hasShip || isConf);
-    let urgencyHtml = '';
-    let nextAction  = '';
-    if (isActive && days !== null && willShred) {
-      if (days < 0) {
-        urgencyHtml = `<div class="storage-warn urgent">⚠️ Storage expired — contact us</div>`;
-      } else if (days === 0) {
-        urgencyHtml = `<div class="storage-warn urgent">⚠️ Expires today</div>`;
-      } else if (days <= 5) {
-        urgencyHtml = `<div class="storage-warn ${days<=2?'urgent':''}">⏰ Pickup by ${fmtDate(m.storageDueDate)} (${days}d)</div>`;
-      } else {
-        urgencyHtml = `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">
-          Storage until ${fmtDate(m.storageDueDate)} (${days}d)
-        </div>`;
-      }
-      if (isParcel && days <= 7) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: daily storage fee, return, or discard</div>`;
-      else if (!isParcel && days <= 3) nextAction = `<div style="font-size:11px;color:var(--amber);margin-top:3px">After expiry: securely shredded</div>`;
-    } else if (isActive && hasFwd && !isConf && days !== null) {
-      // Forwarding plan — show storage date as reference but no shred warning
-      urgencyHtml = `<div style="font-size:11px;color:var(--ink-4);margin-top:3px">
-        Stored until ${fmtDate(m.storageDueDate)}
-      </div>`;
-    }
-
-    const statusLabel = {
-      arrived:'Arrived', scanned:'Scanned', stored:'Stored',
-      forwarding_pending:'Forwarding Soon', forwarded:'Forwarded',
-      picked_up:'Picked Up', shredded:'Shredded', discarded:'Discarded'
-    }[m.status] || m.status.replace(/_/g,' ');
-
-    return `
-      <div class="mail-item ${blurred?'blurred':''}" style="${isReleased?'opacity:0.65':''}">
-        <div class="mail-icon ${isParcel?'parcel':'letter'}">
-          ${icon}
-          <div style="font-size:9px;font-weight:600;text-transform:uppercase;color:${isParcel?'var(--amber)':'var(--blue)'};margin-top:1px">${isParcel?'Parcel':'Mail'}</div>
-        </div>
-        <div class="mail-info">
-          <div class="mail-recipient">${m.recipientName || (m.specialCase==='TRUE'||m.specialCase===true ? '<span style="color:var(--amber)">Pending Assignment</span>' : 'Unknown')}</div>
-          <div class="mail-date">
-            ${fmtDateTime(m.loggedAt)}
-            ${m.senderName ? ' · From: <strong>' + m.senderName + '</strong>' : ''}
-          </div>
-          ${m.noteToClient ? `<div style="font-size:11px;color:var(--ink-3);margin-top:2px">${m.noteToClient}</div>` : ''}
-          ${(m.specialCase==='TRUE'||m.specialCase===true) && !m.recipientName ? `<div style="font-size:11px;background:var(--amber-bg);color:var(--amber);padding:3px 8px;border-radius:4px;margin-top:4px">⚠ Our staff will assign this to your mailbox shortly.</div>` : ''}
-          ${confNotice}
-          ${scanHtml}
-          ${fwdHtml}
-          ${urgencyHtml}
-          ${nextAction}
-        </div>
-        <div class="mail-meta">
-          <span class="pill ${m.status}">${statusLabel}</span>
-        </div>
-      </div>`;
-  };
-
-  const isActive   = m => ['arrived','scanned','stored','forwarding_pending'].includes(m.status);
-  const isComplete = m => !isActive(m);
-
-  const hasPending  = sorted.some(isActive);
-  const hasComplete = sorted.some(isComplete);
-
-  if (!statusFilter && hasPending && hasComplete) {
-    const pending  = sorted.filter(isActive);
-    const complete = sorted.filter(isComplete);
-    return `
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:8px">
-        Awaiting (${pending.length})
-      </div>
-      <div class="mail-list" style="margin-bottom:20px">${pending.map(m=>buildItem(m,false)).join('')}</div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);margin-bottom:8px">
-        Completed (${complete.length})
-      </div>
-      <div class="mail-list">${complete.map(m=>buildItem(m,true)).join('')}</div>`;
-  }
-
-  return `<div class="mail-list">${sorted.map(m=>buildItem(m,isComplete(m))).join('')}</div>`;
-}
-
-
-// Track which plan tab is showing in the Plans tab
-let _plansTabActiveSub = null;
-
-function renderPlansTab(sub, access) {
-  const dc      = qs('dashboard-content');
-  const allSubs = STATE.allSubs || [sub];
-  if (!_plansTabActiveSub) _plansTabActiveSub = sub.subscriptionId;
-
-  // Build tab selector (only shown when more than 1 plan)
-  const tabsHtml = allSubs.length > 1 ? `
-    <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:20px;background:var(--bg-2)">
-      ${allSubs.map(s => {
-        const isActive  = s.subscriptionId === _plansTabActiveSub;
-        const label     = getPlanFriendlyName(s);
-        const statusDot = s.accessStatus === 'ACTIVE' ? '🟢' :
-                          s.accessStatus === 'CANCELED_WITH_ACCESS' ? '🟡' :
-                          s.accessStatus === 'PAYMENT_REQUIRED' ? '🔴' : s.accessStatus === 'PENDING_PAYMENT' ? '🟡' : '⚪';
-        return `<button onclick="switchPlanTab('${s.subscriptionId}')"
-          style="flex:1;padding:10px 8px;border:none;font-family:inherit;font-size:12px;font-weight:${isActive?'600':'400'};
-          cursor:pointer;background:${isActive?'var(--white)':'transparent'};color:${isActive?'var(--ink)':'var(--ink-3)'};
-          border-right:1px solid var(--border);transition:background .15s;text-align:center;line-height:1.3">
-          ${statusDot} ${label}
-        </button>`;
-      }).join('')}
-    </div>` : '';
-
-  // Build single plan card for the selected tab
-  const activeSub = allSubs.find(s => s.subscriptionId === _plansTabActiveSub) || sub;
-  const isCurrentSub = activeSub.subscriptionId === sub.subscriptionId;
-  const thisPc   = isCurrentSub ? (STATE.planCard || null) : null;
-  const thisRecs = isCurrentSub ? (STATE.recipients || []) : [];
-  const cardHtml = buildPlanCard(activeSub, thisPc, thisRecs, isCurrentSub);
-
-  dc.innerHTML = `
-    <div style="display:flex;flex-direction:column">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${allSubs.length>1?'0':'12px'}">
-        <div></div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-        <button id="plans-refresh-btn" onclick="animRefreshPlans()" style="padding:5px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;background:var(--white);color:var(--ink-3);cursor:pointer;font-family:inherit">↻ Refresh</button>
-        <div id="plans-refresh-ts" style="font-size:10px;color:var(--ink-4)"></div>
-      </div>
-      </div>
-      ${tabsHtml}
-      ${cardHtml}
-      <div style="text-align:center;padding:12px;margin-top:16px;font-size:12px;color:var(--ink-4);border:1px dashed var(--border);border-radius:var(--radius)">
-        To cancel a plan, start a new subscription, or make other changes —
-        <strong style="color:var(--ink-3)">contact us via chat support</strong>.
-      </div>
-    </div>`;
-}
-
-function getPlanFriendlyName(s) {
-  // Use pc.friendlyName if set, else fall back to official plan name
-  const pc = STATE.allPlanCards && STATE.allPlanCards[s.subscriptionId];
-  const friendly = pc && pc.friendlyName ? pc.friendlyName.trim() : '';
-  if (friendly) return friendly;
-  return (s.planName || '').split('–')[0].trim() || s.subscriptionId.slice(-8);
-}
-
-async function switchPlanTab(subscriptionId) {
-  _plansTabActiveSub = subscriptionId;
-  const allSubs = STATE.allSubs || [];
-  const targetSub = allSubs.find(s => s.subscriptionId === subscriptionId);
-  if (!targetSub) return;
-
-  // If switching to a different sub than the currently loaded one, load its data
-  if (subscriptionId !== (STATE.activeSub||{}).subscriptionId) {
-    if (targetSub.planCardId) {
-      // Show shimmer while loading
-      const shimmerHtml = `<div style="padding:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div><div class="shimmer-line short"></div><div style="margin-top:20px"><div class="shimmer-line"></div><div class="shimmer-line med"></div></div></div>`;
-      const pcListEl = qs('pc-list') || qs('dashboard-content');
-      if (pcListEl) pcListEl.innerHTML = shimmerHtml;
-      try {
-        const [planData, recsData] = await Promise.all([
-          api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${targetSub.planCardId}`),
-          api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${targetSub.planCardId}`)
-        ]);
-        // Store in allPlanCards cache
-        if (!STATE.allPlanCards) STATE.allPlanCards = {};
-        if (planData && planData.planCard) STATE.allPlanCards[subscriptionId] = planData.planCard;
-        // Temporarily use this data for rendering
-        const savedPc   = STATE.planCard;
-        const savedRecs = STATE.recipients;
-        STATE.planCard   = planData.planCard || null;
-        STATE.recipients = recsData.recipients || [];
-        renderPlansTab(STATE.activeSub, STATE.access);
-        STATE.planCard   = savedPc;
-        STATE.recipients = savedRecs;
-        return;
-      } catch(e) { /* fall through to render with empty data */ }
-    }
-  }
-  renderPlansTab(STATE.activeSub, STATE.access);
-}
-
-async function animRefreshPlans() {
-  const btn = document.getElementById('plans-refresh-btn');
-  if (!btn || btn.disabled) return; // debounce
-  btn.disabled = true;
-  const orig = btn.innerHTML;
-  btn.innerHTML = '<span class="spin-active">↻</span> Refresh';
-  try {
-    await refreshPlanCards();
-    const ts = document.getElementById('plans-refresh-ts');
-    if (ts) ts.textContent = 'Last refreshed ' + new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'});
-  } catch(e) { toast('Could not refresh', 'error'); }
-  finally { btn.disabled = false; btn.innerHTML = orig; }
-}
-
-async function refreshPlanCards() {
-  const sub = STATE.activeSub;
-  if (!sub || !sub.planCardId) return;
-  try {
-    const [planData, recsData] = await Promise.all([
-      api(`uuid=${STATE.uuid}&action=getPlanCard&planCardId=${sub.planCardId}`),
-      api(`uuid=${STATE.uuid}&action=getRecipients&planCardId=${sub.planCardId}`)
-    ]);
-    if (planData && planData.planCard) STATE.planCard = planData.planCard;
-    if (recsData && recsData.recipients) STATE.recipients = recsData.recipients;
-    renderPlansTab(sub, STATE.access);
-    toast('Plan card refreshed', 'success');
-  } catch(e) { toast('Could not refresh: ' + e.message, 'error'); }
-}
-
-function buildPlanCard(sub, pc, recipients, isLoaded) {
-  const label = k => `<div style="color:var(--ink-4);font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${k}</div>`;
-  const val   = v => `<div style="font-size:13px;font-weight:500;color:var(--ink)">${v}</div>`;
-
-  // Status pill colour
-  const pillClass = {
-    ACTIVE:'scanned', CANCELED_WITH_ACCESS:'warning',
-    PENDING_PAYMENT:'', PAYMENT_REQUIRED:'confidential', CANCELED:'confidential'
-  }[sub.accessStatus] || 'stored';
-
-  // Friendly plan name — use pc.friendlyName if set (customer nickname), else official plan name
-  const officialPlanName = (sub.planName || '—').split('–')[0].trim();
-  const friendlyPlanName = (pc && pc.friendlyName) ? pc.friendlyName.trim() : null;
-  const planName = friendlyPlanName || officialPlanName;
-
-  const billing = sub.interval === 'year' ? 'Annual' : 'Monthly';
-  const safeId  = (sub.subscriptionId || sub.planCardId || 'plan').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-  // Period
-  const period = pc
-    ? (fmtDate(pc.currentPeriodStart) + ' – ' + fmtDate(pc.currentPeriodEnd))
-    : (sub.accessUntilDate ? '— – ' + fmtDate(sub.accessUntilDate) : '—');
-
-  // Location virtual office address — from planCard locationId resolved to Locations
-  // For now we show the configured address from planCard or fallback
-  const officeAddr = '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
-
-  // Usage
-  const mailLimit   = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
-  const parcelLimit = pc ? (parseInt(pc.parcelLimit) || 0) : 0;
-  const mailsUsed   = pc ? (parseInt(pc.mailsUsed)   || 0) : 0;
-  const parcelsUsed = pc ? (parseInt(pc.parcelsUsed) || 0) : 0;
-  const mailPct     = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
-  const parcelPct   = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
-  const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
-
-  // Forwarding
-  const hasFwd = pc && pc.autoFeature === 'ship';
-  const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
-
-  // Recipients
-  const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
-  const activeR  = recipients.filter(r => r.status === 'active').length;
-  const pendingR = recipients.filter(r => r.status !== 'active').length;
-  const canAddR  = activeR < maxR;
-
-  const _renderClientRec = r => {
-    const isTemp = r.notes && r.notes.startsWith('TEMP:');
-    return `
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-        <div style="width:30px;height:30px;border-radius:50%;background:${isTemp?'var(--amber-bg)':'var(--bg-2)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:${isTemp?'var(--amber)':'var(--ink-2)'};flex-shrink:0">${isTemp?'T':initials(r.name)}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;line-height:1.3">${r.name}</div>
-          <div style="font-size:11px;color:var(--ink-4)">${r.companyName ? r.companyName : r.type === 'company' ? 'Business' : 'Individual'}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-          <span class="pill ${r.status === 'active' ? 'scanned' : 'stored'}" style="font-size:10px">${r.status === 'active' ? 'Active' : r.status === 'pending' ? 'Pending' : r.status}</span>
-        </div>
-      </div>`;
-  };
-  const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
-  const _tempRecs = recipients.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
-  const recipientRows = recipients.length === 0
-    ? `<div style="font-size:12px;color:var(--ink-4);padding:10px 0">No mail recipients set up yet.</div>`
-    : [
-        _regRecs.map(_renderClientRec).join(''),
-        _tempRecs.length > 0 ? `
-          <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);margin-bottom:6px">Temporary</div>
-            ${_tempRecs.map(_renderClientRec).join('')}
-            <div style="font-size:11px;color:var(--ink-4);margin-top:6px;padding:6px 8px;background:var(--bg-2);border-radius:6px">Temporary recipients are managed by reception. Contact us to add or remove.</div>
-          </div>` : ''
-      ].join('');
-
-  const addRecipientForm = isLoaded && canAddR ? `
-    <div style="margin-top:4px" id="add-rec-toggle-row-${safePcId(sub.planCardId)}">
-      <button class="btn btn-secondary btn-sm" style="margin-top:8px"
-        onclick="toggleAddRecForm('${safePcId(sub.planCardId)}','${sub.planCardId}')">
-        + Add Name to Mailbox
-      </button>
-      <span style="font-size:11px;color:var(--ink-4);margin-left:8px">${activeR} of ${maxR} slots used</span>
-    </div>
-    <div id="add-rec-form-${safePcId(sub.planCardId)}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-      <div style="font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:10px">Who should receive mail at this address?</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Name *</label>
-          <input type="text" id="nr-name-${safePcId(sub.planCardId)}" placeholder="e.g. Jane Smith or Acme Corp">
-        </div>
-        
-      </div>
-      <div class="form-group" style="max-width:240px">
-        <label>Type</label>
-        <select id="nr-type-${safePcId(sub.planCardId)}">
-          <option value="individual">Individual / Person</option>
-          <option value="company">Business / Company</option>
-        </select>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-primary btn-sm" id="nr-submit-${safePcId(sub.planCardId)}"
-          onclick="submitAddRecipient('${sub.planCardId}','${safePcId(sub.planCardId)}')">Submit</button>
-        <button class="btn btn-secondary btn-sm"
-          onclick="toggleAddRecForm('${safePcId(sub.planCardId)}','${sub.planCardId}')">Cancel</button>
-      </div>
-    </div>` : isLoaded && !canAddR ? `
-    <div style="margin-top:10px;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
-      All ${maxR} mailbox name slot${maxR > 1 ? 's' : ''} filled. Contact reception to make changes.
-    </div>` : '';
-
-  // Forwarding section
-  const fwdSection = hasFwd ? `
-    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">Forwarding Address</div>
-        <button class="btn btn-secondary btn-sm" id="fwd-edit-btn-${safePcId(sub.planCardId)}"
-          onclick="toggleFwdEdit('${safePcId(sub.planCardId)}','${sub.planCardId}')">Edit</button>
-      </div>
-      <div id="fwd-display-${safePcId(sub.planCardId)}" style="font-size:13px;color:var(--ink-2)">
-        ${fwdAddr || '<span style="color:var(--ink-4)">Not set</span>'}
-        ${pc && pc.forwardingInstructions ? `<div style="font-size:12px;color:var(--ink-4);margin-top:4px">${pc.forwardingInstructions}</div>` : ''}
-      </div>
-      <div id="fwd-form-${safePcId(sub.planCardId)}" style="display:none;margin-top:10px">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Street Address</label>
-            <input type="text" id="fwd-addr-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingAddress || '' : ''}" placeholder="123 Main St">
-          </div>
-          <div class="form-group">
-            <label>City</label>
-            <input type="text" id="fwd-city-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingCity || '' : ''}" placeholder="Toronto">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Province / State</label>
-            <input type="text" id="fwd-prov-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingProvince || '' : ''}" placeholder="ON">
-          </div>
-          <div class="form-group">
-            <label>Postal / ZIP</label>
-            <input type="text" id="fwd-postal-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingPostalCode || '' : ''}" placeholder="M5V 2H1">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Country</label>
-          <input type="text" id="fwd-country-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingCountry || 'Canada' : 'Canada'}" placeholder="Canada">
-        </div>
-        <div class="form-group">
-          <label>Special Instructions <span style="color:var(--ink-4);text-transform:none">(optional)</span></label>
-          <input type="text" id="fwd-instructions-${safePcId(sub.planCardId)}" value="${pc ? pc.forwardingInstructions || '' : ''}" placeholder="e.g. leave at door, signature required...">
-        </div>
-        <div style="display:flex;gap:8px;margin-top:4px">
-          <button class="btn btn-primary btn-sm" id="fwd-submit-${sub.planCardId}"
-            onclick="submitFwdUpdate('${sub.planCardId}','${safePcId(sub.planCardId)}')">Save Address</button>
-          <button class="btn btn-secondary btn-sm"
-            onclick="toggleFwdEdit('${safePcId(sub.planCardId)}','${sub.planCardId}')">Cancel</button>
-        </div>
-      </div>
-    </div>` : '';
-
-  return `
-    <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden">
-
-      <!-- Plan card header -->
-      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-        <div style="flex:1;min-width:0">
-
-          <!-- Friendly nickname — editable, shown above plan name -->
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-            <div id="fname-display-${safeId}"
-              style="font-size:15px;font-weight:600;color:var(--ink);line-height:1.2">
-              ${friendlyPlanName || 'Add a nickname'}
-            </div>
-            <button onclick="openFriendlyNameEdit('${pc ? pc.planCardId : ''}','${safeId}')"
-              style="background:none;border:none;cursor:pointer;color:var(--ink-4);padding:2px 4px;border-radius:4px;line-height:1;flex-shrink:0"
-              title="Edit nickname">
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5a2.121 2.121 0 013 3L5 15H1v-4L11.5 2.5z"/></svg>
-            </button>
-          </div>
-
-          <!-- Inline edit form (hidden by default) -->
-          <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:6px">
-            <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp, Holding Co"
-              style="font-size:13px;padding:4px 8px;border:1px solid var(--blue);border-radius:5px;font-family:inherit;outline:none;width:180px"
-              onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
-            <button id="fname-save-${safeId}" onclick="saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}')"
-              style="font-size:11px;padding:4px 10px;background:var(--blue);color:#fff;border:none;border-radius:5px;cursor:pointer;font-family:inherit;font-weight:600">Save</button>
-            <button onclick="closeFriendlyNameEdit('${safeId}')"
-              style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;color:var(--ink-3)">Cancel</button>
-          </div>
-
-          <!-- Fixed plan name — never editable -->
-          <div style="font-size:12px;color:var(--ink-4);margin-bottom:1px">${officialPlanName} · ${billing}${sub.planAmount ? ' · $' + (sub.planAmount/100).toFixed(2) + ' CAD' : ''}</div>
-
-        </div>
-        <span class="pill ${pillClass}" style="font-size:11px;white-space:nowrap;flex-shrink:0">${sub.accessStatus.replace(/_/g,' ')}</span>
-      </div>
-
-      <div style="padding:18px 20px">
-
-        <!-- Info grid -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
-          <div>${label('Billing Period')}${val(period)}</div>
-          <div>${label('Billing Cycle')}${val(billing)}</div>
-          <div style="grid-column:1/-1">
-            ${label('Virtual Office Address')}
-            <div style="font-size:13px;font-weight:500;color:var(--ink)">${officeAddr}</div>
-            <div style="font-size:11px;color:var(--ink-4);margin-top:2px">This is your registered mailing address</div>
-          </div>
-        </div>
-
-        <!-- Usage -->
-        <div style="margin-bottom:20px;padding:14px;background:var(--bg);border-radius:var(--radius-sm)">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:10px">Usage This Period</div>
-          <div style="display:flex;flex-direction:column;gap:10px">
-            <div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-                <span>Mail</span><span style="color:var(--ink-3)">${mailsUsed} / ${mailLimit || '—'}</span>
-              </div>
-              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(mailPct)}" style="width:${mailPct}%"></div></div>
-            </div>
-            ${parcelLimit > 0 ? `
-            <div>
-              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-                <span>Parcels</span><span style="color:var(--ink-3)">${parcelsUsed} / ${parcelLimit}</span>
-              </div>
-              <div class="usage-bar" style="height:5px"><div class="usage-bar-fill ${bar(parcelPct)}" style="width:${parcelPct}%"></div></div>
-            </div>` : ''}
-          </div>
-        </div>
-
-        <!-- Recipients / Mailbox Names -->
-        <div>
-          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);margin-bottom:4px">Mailbox Names</div>
-          <div style="font-size:11px;color:var(--ink-4);margin-bottom:10px">People or businesses authorized to receive mail at this address</div>
-          ${recipientRows}
-          ${addRecipientForm}
-        </div>
-
-        ${fwdSection}
-
-        <!-- Business Description (editable by client) -->
-        ${pc ? `
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)">About Your Business</div>
-            <button onclick="toggleBizDescEdit('${pc.planCardId}')"
-              style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">
-              Edit
-            </button>
-          </div>
-          <div id="biz-desc-display-${pc.planCardId}" style="font-size:13px;color:${pc.businessDescription?'var(--ink)':'var(--ink-4)'}">
-            ${pc.businessDescription || 'No description — tap Edit to add one.'}
-          </div>
-          <div id="biz-desc-edit-${pc.planCardId}" style="display:none;margin-top:8px">
-            <textarea id="biz-desc-input-${pc.planCardId}" rows="3"
-              style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box"
-              placeholder="Describe your business in one sentence...">${pc.businessDescription || ''}</textarea>
-            <div style="display:flex;gap:8px;margin-top:6px">
-              <button onclick="saveBizDesc('${pc.planCardId}')"
-                style="padding:5px 14px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);font-family:inherit;font-size:12px;cursor:pointer">Save</button>
-              <button onclick="toggleBizDescEdit('${pc.planCardId}')"
-                style="padding:5px 14px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:12px;cursor:pointer;color:var(--ink-3)">Cancel</button>
-            </div>
-          </div>
-        </div>` : ''}
-
-      </div>
-    </div>`;
-}
-
-// ── Business description edit helpers ─────────────────────────
-function toggleBizDescEdit(planCardId) {
-  const display = document.getElementById('biz-desc-display-' + planCardId);
-  const edit    = document.getElementById('biz-desc-edit-' + planCardId);
-  if (!display || !edit) return;
-  const isEditing = edit.style.display !== 'none';
-  edit.style.display    = isEditing ? 'none' : 'block';
-  display.style.display = isEditing ? 'block' : 'none';
-}
-
-async function saveBizDesc(planCardId) {
-  const input = document.getElementById('biz-desc-input-' + planCardId);
-  if (!input) return;
-  const desc = input.value.trim();
-  try {
-    const r = await apiPost({ action:'updateBusinessDescription', uuid:STATE.uuid, planCardId, businessDescription: desc });
-    if (r.status !== 'ok') throw new Error(r.message || 'Failed');
-    // Update display
-    const display = document.getElementById('biz-desc-display-' + planCardId);
-    if (display) {
-      display.textContent = desc || 'No description — tap Edit to add one.';
-      display.style.color = desc ? 'var(--ink)' : 'var(--ink-4)';
-    }
-    // Update cache
-    if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.businessDescription = desc;
-    toggleBizDescEdit(planCardId);
-    toast('Description saved', 'success');
-  } catch(e) { toast(e.message, 'error'); }
-}
-
-// ── Toggle helpers for plan card forms ───────────────────
-function toggleAddRecForm(subId, planCardId) {
-  const key  = subId || planCardId;
-  const form = document.getElementById('add-rec-form-' + key);
-  const row  = document.getElementById('add-rec-toggle-row-' + key);
-  if (!form) return;
-  const open = form.style.display === 'none';
-  form.style.display = open ? 'block' : 'none';
-  const btn = row ? row.querySelector('button') : null;
-  if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Name to Mailbox';
-}
-
-function toggleFwdEdit(subId, planCardId) {
-  const key     = subId || planCardId;
-  const display = document.getElementById('fwd-display-' + key);
-  const form    = document.getElementById('fwd-form-' + key);
-  const btn     = document.getElementById('fwd-edit-btn-' + key);
-  if (!form) return;
-  const open = form.style.display === 'none';
-  if (display) display.style.display = open ? 'none' : 'block';
-  form.style.display = open ? 'block' : 'none';
-  if (btn) btn.textContent = open ? 'Cancel' : 'Edit';
-}
-
-async function submitAddRecipient(planCardId, key) {
-  // Sanitize key for DOM ID safety
-  const safeKey = String(key || planCardId).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const nameEl  = document.getElementById('nr-name-' + safeKey);
-  const name    = nameEl ? nameEl.value.trim() : '';
-  console.log('[addRecipient] key=', key, 'safeKey=', safeKey, 'nameEl=', nameEl, 'name=', name);
-  if (!name) { toast('Please enter a name', 'error'); return; }
-  const realKey = safeKey;
-
-  const btn = document.getElementById('nr-submit-' + realKey);
-  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
-
-  try {
-    const typeEl = document.getElementById('nr-type-' + realKey);
-    const result = await apiPost({
-      action:          'addRecipient',
-      uuid:            STATE.uuid,
-      planCardId:      planCardId,
-      name:            name,
-      companyName:     '',
-      type:            typeEl ? typeEl.value         : 'individual',
-      notifyOnArrival: true,
-      language:        'en'
-    });
-    if (result.status === 'ok') {
-      toast(name + ' added — staff will activate shortly', 'success');
-      STATE.recipients.push({
-        recipientId: result.recipientId || 'RCP_NEW_' + Date.now(),
-        planCardId, name,
-        companyName: '',
-        type:        typeEl ? typeEl.value : 'individual',
-        status: 'active'
-      });
-      renderPlansTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Submit'; }
-  }
-}
-
-
-function openFriendlyNameEdit(planCardId, safeId) {
-  const display = document.getElementById('fname-display-' + safeId);
-  const editWrap = document.getElementById('fname-edit-' + safeId);
-  const input    = document.getElementById('fname-input-' + safeId);
-  if (!editWrap) return;
-  const current = display ? display.textContent.trim() : '';
-  if (input) input.value = (current === 'Add a nickname') ? '' : current;
-  if (display) display.style.display = 'none';
-  editWrap.style.display = 'flex';
-  if (input) input.focus();
-}
-
-function closeFriendlyNameEdit(safeId) {
-  const display  = document.getElementById('fname-display-' + safeId);
-  const editWrap = document.getElementById('fname-edit-' + safeId);
-  if (display)  display.style.display = '';
-  if (editWrap) editWrap.style.display = 'none';
-}
-
-async function saveFriendlyName(planCardId, safeId) {
-  const input = document.getElementById('fname-input-' + safeId);
-  const name  = input ? input.value.trim() : '';
-  const saveBtn = document.getElementById('fname-save-' + safeId);
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving...'; }
-  try {
-    const r = await apiPost({ action:'updateFriendlyName', uuid:STATE.uuid, planCardId, friendlyName: name });
-    if (r.status === 'ok') {
-      const display = document.getElementById('fname-display-' + safeId);
-      if (display) display.textContent = name || 'Add a nickname';
-      if (STATE.planCard && STATE.planCard.planCardId === planCardId) STATE.planCard.friendlyName = name;
-      _plansTabActiveSub = null; // force re-render tab labels
-      closeFriendlyNameEdit(safeId);
-      toast('Nickname ' + (name ? 'saved' : 'removed'), 'success');
-      renderPlansTab(STATE.activeSub, STATE.access); // refresh heading
-    } else throw new Error(r.message || 'Failed');
-  } catch(e) {
-    toast(e.message, 'error');
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
-  }
-}
-
-// Legacy alias
-async function editFriendlyName(planCardId, safeId) {
-  openFriendlyNameEdit(planCardId, safeId);
-}
-
-async function submitFwdUpdate(planCardId, key) {
-  const safeKey = String(key || planCardId).replace(/[^a-zA-Z0-9_-]/g, '_');
-  const btn = document.getElementById('fwd-submit-' + safeKey);
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
-
-  const g = id => {
-    const el = document.getElementById(id + safeKey);
-    return el ? el.value.trim() : '';
-  };
-
-  try {
-    const result = await apiPost({
-      action:                'updateForwarding',
-      uuid:                  STATE.uuid,
-      planCardId:            planCardId,
-      forwardingAddress:     g('fwd-addr-'),
-      forwardingCity:        g('fwd-city-'),
-      forwardingProvince:    g('fwd-prov-'),
-      forwardingPostalCode:  g('fwd-postal-'),
-      forwardingCountry:     g('fwd-country-'),
-      forwardingInstructions: g('fwd-instructions-')
-    });
-    if (result.status === 'ok') {
-      toast('Forwarding address saved', 'success');
-      if (STATE.planCard) {
-        STATE.planCard.forwardingAddress      = g('fwd-addr-');
-        STATE.planCard.forwardingCity         = g('fwd-city-');
-        STATE.planCard.forwardingProvince     = g('fwd-prov-');
-        STATE.planCard.forwardingPostalCode   = g('fwd-postal-');
-        STATE.planCard.forwardingCountry      = g('fwd-country-');
-        STATE.planCard.forwardingInstructions = g('fwd-instructions-');
-      }
-      renderPlansTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Save Address'; }
-  }
-}
-
-
-// ── Agents Tab ────────────────────────────────────────────
-function renderAgentsTab(sub, access) {
-  const dc      = qs('dashboard-content');
-  const agents  = STATE.agents || [];
-  const maxA    = 3;
-  const activeA = agents.filter(a => a.status === 'active' || !a.status).length;
-  const canAdd  = activeA < maxA;
-  const pcId    = encodeURIComponent(sub.planCardId || '');
-
-  const agentRows = agents.length === 0
-    ? `<div style="padding:24px;text-align:center;color:var(--ink-4);font-size:13px">
-        No pickup agents added yet. Add up to ${maxA} authorized agents.
-       </div>`
-    : agents.map(a => {
-        const safeId   = encodeURIComponent(a.agentId || '');
-        const safeName = encodeURIComponent(a.name || '');
-        return `
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
-          <div style="width:36px;height:36px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--ink-2);flex-shrink:0">
-            ${(a.name || '?')[0].toUpperCase()}
-          </div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:500">${a.name || ''}</div>
-            <div style="font-size:11px;color:var(--ink-4);margin-top:1px">
-              ${a.idType ? a.idType + (a.idLast4 ? ' ···' + a.idLast4 : '') : ''}
-              ${a.phone ? ' · ' + a.phone : ''}
-              ${a.notes ? ' · ' + a.notes : ''}
-            </div>
-          </div>
-          <button class="btn btn-secondary btn-sm" style="color:var(--red);border-color:var(--red-border)"
-            onclick="removeAgent('${safeId}','${safeName}')">Remove</button>
-        </div>`;
-      }).join('');
-
-  const addFormHtml = canAdd ? `
-    <div id="agent-add-section">
-      <div id="agent-add-toggle-row">
-        <button class="btn btn-secondary" onclick="toggleAddAgentForm()">+ Add Pickup Agent</button>
-      </div>
-      <div id="agent-add-form" style="display:none;background:var(--white);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:12px;box-shadow:var(--shadow)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:14px">New Pickup Agent</div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Full Name *</label>
-            <input type="text" id="ag-name" placeholder="Jane Smith">
-          </div>
-          <div class="form-group">
-            <label>Phone</label>
-            <input type="text" id="ag-phone" placeholder="416-555-0100">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>ID Type</label>
-            <select id="ag-idtype">
-              <option value="Driver's Licence">Driver's Licence</option>
-              <option value="Passport">Passport</option>
-              <option value="Health Card">Health Card</option>
-              <option value="Employee ID">Employee ID</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Last 4 digits of ID</label>
-            <input type="text" id="ag-idlast4" placeholder="1234" maxlength="4">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Notes <span style="color:var(--ink-4);text-transform:none;font-weight:400">(optional)</span></label>
-          <input type="text" id="ag-notes" placeholder="e.g. My assistant, alternate contact...">
-        </div>
-        <div style="display:flex;gap:8px;margin-top:4px">
-          <button class="btn btn-primary" id="ag-submit" onclick="submitAddAgent('${pcId}')">Add Agent</button>
-          <button class="btn btn-secondary" onclick="toggleAddAgentForm()">Cancel</button>
-        </div>
-      </div>
-    </div>` : `
-    <div style="padding:10px 14px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber)">
-      Maximum of ${maxA} agents reached. Remove one to add another.
-    </div>`;
-
-  dc.innerHTML = `
-    <div>
-      <div class="section-header" style="margin-bottom:12px">
-        <div class="section-title">Pickup Agents</div>
-        <div style="font-size:12px;color:var(--ink-4)">${activeA} of ${maxA} slots used</div>
-      </div>
-      <div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)">
-        <div style="padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-3)">
-          These people are authorized to pick up your mail. They'll need to show valid ID prior to our staff releasing mail or parcel.
-        </div>
-        ${agentRows}
-      </div>
-      ${addFormHtml}
-    </div>`;
-}
-
-
-function toggleAddAgentForm() {
-  const form = qs('agent-add-form');
-  const row  = qs('agent-add-toggle-row');
-  if (!form) return;
-  const open = form.style.display === 'none';
-  form.style.display = open ? 'block' : 'none';
-  if (row) {
-    const btn = row.querySelector('button');
-    if (btn) btn.textContent = open ? '✕ Cancel' : '+ Add Pickup Agent';
-  }
-}
-
-async function submitAddAgent(planCardId) {
-  planCardId = decodeURIComponent(planCardId || '');
-  const name = qs('ag-name') ? qs('ag-name').value.trim() : '';
-  if (!name) { toast('Please enter the agent name', 'error'); return; }
-
-  const btn = qs('ag-submit');
-  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
-
-  try {
-    const result = await apiPost({
-      action:   'addAgent',
-      uuid:     STATE.uuid,
-      planCardId,
-      name,
-      idType:   qs('ag-idtype')  ? qs('ag-idtype').value  : '',
-      idLast4:  qs('ag-idlast4') ? qs('ag-idlast4').value : '',
-      phone:    qs('ag-phone')   ? qs('ag-phone').value   : '',
-      notes:    qs('ag-notes')   ? qs('ag-notes').value   : ''
-    });
-    if (result.status === 'ok') {
-      toast(name + ' added as pickup agent', 'success');
-      // Add to local state immediately
-      STATE.agents.push({
-        agentId:  result.agentId || 'AGT_' + Date.now(),
-        planCardId, name,
-        idType:   qs('ag-idtype')  ? qs('ag-idtype').value  : '',
-        idLast4:  qs('ag-idlast4') ? qs('ag-idlast4').value : '',
-        phone:    qs('ag-phone')   ? qs('ag-phone').value   : '',
-        notes:    qs('ag-notes')   ? qs('ag-notes').value   : '',
-        status:   'active'
-      });
-      renderAgentsTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed to add agent');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Add Agent'; }
-  }
-}
-
-async function removeAgent(agentId, name) {
-  agentId = decodeURIComponent(agentId || '');
-  name    = decodeURIComponent(name    || '');
-  if (!confirm('Remove ' + name + ' as a pickup agent?')) return;
-  try {
-    const result = await apiPost({
-      action:  'deactivateAgent',
-      uuid:    STATE.uuid,
-      agentId
-    });
-    if (result.status === 'ok') {
-      toast(name + ' removed', 'success');
-      STATE.agents = STATE.agents.filter(a => a.agentId !== agentId);
-      renderAgentsTab(STATE.activeSub, STATE.access);
-    } else {
-      throw new Error(result.message || 'Failed');
-    }
-  } catch(err) {
-    toast(err.message, 'error');
-  }
-}
-
-
-// ── Refresh Mail Log ─────────────────────────────────────
-async function _doRefreshMailLog() {
-  const sub = STATE.activeSub;
-  const data = await api(`uuid=${STATE.uuid}&action=getMailLog&subscriptionId=${sub.subscriptionId}`);
-  STATE.mailLog = (data.mailLog || []).filter(m => m.mailId);
-  const container = qs('mail-list-container');
-  const filter    = qs('mail-status-filter') ? qs('mail-status-filter').value : '';
-  if (container) {
-    container.innerHTML = renderMailList(STATE.mailLog, sub, filter);
-  } else {
-    renderMailTab(sub, STATE.access);
-  }
-  const ts = qs('mail-refresh-ts');
-  if (ts) ts.textContent = 'Last refreshed ' + new Date().toLocaleTimeString('en-CA', {hour:'2-digit',minute:'2-digit'});
-}
-
-async function refreshMailLog() {
-  const btn = qs('refresh-btn');
-  if (!btn || btn.disabled) return; // debounce
-  btn.disabled = true;
-  const orig = btn.innerHTML;
-  btn.innerHTML = '<span class="spin-active">↻</span>';
-  try { await _doRefreshMailLog(); }
-  catch(e) { toast('Could not refresh', 'error'); }
-  finally { btn.disabled = false; btn.innerHTML = orig; }
-}
-
-function copyMailingAddress(address, boxEl) {
-  navigator.clipboard.writeText(address).then(() => {
-    const btn = document.getElementById('addr-copy-btn');
-    if (btn) {
-      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2,8 6,12 14,4"/></svg> Copied ✓';
-      btn.style.color = 'var(--green)';
-      btn.style.borderColor = 'var(--green)';
-      btn.style.background = 'rgba(34,197,94,0.08)';
-    }
-    if (boxEl) {
-      boxEl.style.borderColor = 'var(--green)';
-      boxEl.style.background = 'rgba(34,197,94,0.04)';
-      boxEl.dataset.copied = '1';
-    }
-    setTimeout(() => {
-      if (btn) {
-        btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M3 11V3a1 1 0 011-1h8"/></svg> Copy';
-        btn.style.color = '';
-        btn.style.borderColor = '';
-        btn.style.background = '';
-      }
-      if (boxEl) {
-        boxEl.style.borderColor = 'var(--border)';
-        boxEl.style.background = 'var(--bg)';
-        delete boxEl.dataset.copied;
-      }
-    }, 2000);
-  }).catch(() => toast('Could not copy — please copy manually', 'error'));
-}
-
-boot();
-</script>
-</body>
-</html>
