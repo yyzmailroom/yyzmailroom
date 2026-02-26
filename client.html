@@ -1160,6 +1160,7 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
     <div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.5">
       Your letters will be bundled and shipped to this address during the <strong>first week of every month</strong>.
       Confidential mail will never be forwarded. Parcels are not included in forwarding.
+      <br><span style="color:var(--ink-4)">You can update your forwarding address anytime in your profile.</span>
     </div>
     <div class="form-group">
       <label>Street Address</label>
@@ -1231,43 +1232,27 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
 
           <div class="form-divider">Business Information</div>
           <div class="form-group">
-            <label>Plan Nickname <span style="color:var(--ink-4)">(optional)</span></label>
-            <input type="text" id="ob-friendly-name" placeholder="e.g. John's Company, Landscaping LTD">
+            <label>Plan Nickname <span style="color:var(--red)">*</span></label>
+            <input type="text" id="ob-friendly-name" placeholder="e.g. John's Company, Landscaping LTD" required>
             <div style="font-size:11px;color:var(--ink-4);margin-top:4px">A personal name for this mailbox. Shown instead of the plan name.</div>
           </div>
           <div class="form-group">
-            <label>Business Description <span style="color:var(--ink-4)">(one sentence)</span></label>
-            <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs">
+            <label>Business Description <span style="color:var(--ink-4)">(one sentence)</span> <span style="color:var(--red)">*</span></label>
+            <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs" required>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>How did you hear about us?</label>
-              <select id="ob-referral">
-                <option value="">Select...</option>
-                <option>Google Search</option>
-                <option>Referral</option>
-                <option>Walk-in</option>
-                <option>Social Media</option>
-                <option>Other</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Preferred Pickup Time</label>
-              <select id="ob-pickup">
-                <option value="">No preference</option>
-                <option>Mornings (9am–12pm)</option>
-                <option>Afternoons (12pm–5pm)</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label>How did you hear about us? <span style="color:var(--red)">*</span></label>
+            <select id="ob-referral" required>
+              <option value="">Select...</option>
+              <option>Google Search</option>
+              <option>Referral</option>
+              <option>Walk-in</option>
+              <option>Social Media</option>
+              <option>Other</option>
+            </select>
           </div>
 
           ${fwdHtml}
-
-          <div class="form-divider">Special Instructions</div>
-          <div class="form-group">
-            <label>Any special instructions for our team? <span style="color:var(--ink-4)">(optional)</span></label>
-            <textarea id="ob-special" placeholder="e.g. Always notify immediately upon arrival..."></textarea>
-          </div>
 
           <button type="submit" class="btn btn-primary btn-full" id="ob-submit">
             Save & Continue
@@ -1285,6 +1270,18 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
     const locationId = (qs('ob-location') && qs('ob-location').value) || '';
     if (!locationId && locations.length > 0) {
       toast('Please select a location.', 'error');
+      btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
+    }
+    if (!qs('ob-friendly-name') || !qs('ob-friendly-name').value.trim()) {
+      toast('Please enter a plan nickname.', 'error');
+      btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
+    }
+    if (!qs('ob-biz') || !qs('ob-biz').value.trim()) {
+      toast('Please enter a business description.', 'error');
+      btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
+    }
+    if (!qs('ob-referral') || !qs('ob-referral').value) {
+      toast('Please tell us how you heard about us.', 'error');
       btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
     }
 
@@ -1307,9 +1304,7 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
         clientTimezone:      Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto',
         businessDescription: qs('ob-biz') ? qs('ob-biz').value : '',
         referralSource:      qs('ob-referral') ? qs('ob-referral').value : '',
-        friendlyName:        qs('ob-friendly-name') ? qs('ob-friendly-name').value.trim() : '',
-        preferredPickupTime: qs('ob-pickup') ? qs('ob-pickup').value : '',
-        specialInstructions: qs('ob-special') ? qs('ob-special').value : ''
+        friendlyName:        qs('ob-friendly-name') ? qs('ob-friendly-name').value.trim() : ''
       });
 
       if (result.status === 'ok') {
