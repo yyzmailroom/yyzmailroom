@@ -1161,13 +1161,12 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       Your letters will be bundled and shipped to your forwarding address during the <strong>first week of every following month</strong>.
       <strong>All standard shipping fees are included in your plan.</strong>
       Confidential mail will never be forwarded, and parcels are not included.
-      <span style="display:inline-flex;align-items:center;gap:3px;position:relative;cursor:default" class="conf-tooltip-wrap">
-        <span style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:var(--ink-4);color:white;font-size:9px;font-weight:700;flex-shrink:0;line-height:1">i</span>
-        <span class="conf-tooltip" style="display:none;position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:280px;background:#1a1a1a;color:#f0f0f0;font-size:11px;line-height:1.55;padding:10px 12px;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:999;pointer-events:none">
-          <strong style="color:#fff;display:block;margin-bottom:4px">What is confidential mail?</strong>
-          Government-issued IDs, credit cards, financial statements, and other sensitive documents identified by our team using a light bend test will never be forwarded — even on ship plans. Forwarding of confidential mail becomes available once you have verified your identity with us in person at least once.
-          <span style="position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:10px;height:10px;background:#1a1a1a;clip-path:polygon(0 0,100% 0,50% 100%)"></span>
-        </span>
+<span data-conf-btn="1"
+        style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--ink-4);color:white;font-size:9px;font-weight:700;cursor:pointer;vertical-align:middle;margin-left:3px;flex-shrink:0;line-height:1;position:relative;top:-1px;user-select:none">i</span>
+      <span id="conf-tip" style="display:none;position:fixed;background:#1a1a1a;color:#f0f0f0;font-size:11px;line-height:1.6;padding:12px 14px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.35);z-index:99999">
+        <strong style="color:#fff;display:block;margin-bottom:5px">What is confidential mail?</strong>
+        Government-issued IDs, credit cards, financial statements, and other sensitive documents identified by our team using a light bend test will never be forwarded — even on ship plans. Forwarding of confidential mail becomes available once you have verified your identity with us in person at least once.
+        <span style="display:block;margin-top:8px;font-size:10px;color:#999">Tap anywhere to dismiss.</span>
       </span>
       <br><br>
       Most destinations (including <strong>Germany, United Kingdom, United States, France, Australia, the Netherlands</strong> and more)
@@ -2024,6 +2023,38 @@ function handleBannerAction(setupStep) {
     renderSetup(sub, STATE.access);
   }
 }
+
+  // ── Confidential tooltip: position + close on outside click ──────
+  document.addEventListener('click', function(e) {
+    // If clicking the i badge, position the tooltip near it
+    if (e.target.getAttribute && e.target.getAttribute('data-conf-btn') === '1') {
+      const tip = document.getElementById('conf-tip');
+      if (!tip) return;
+      const isVisible = tip.style.display === 'block';
+      // Toggle
+      if (isVisible) { tip.style.display = 'none'; return; }
+      const rect = e.target.getBoundingClientRect();
+      const tipW = 300;
+      let left = rect.left + rect.width / 2 - tipW / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+      const spaceAbove = rect.top;
+      tip.style.width  = tipW + 'px';
+      tip.style.left   = left + 'px';
+      if (spaceAbove > 180) {
+        tip.style.top       = (rect.top + window.scrollY - 8) + 'px';
+        tip.style.transform = 'translateY(-100%)';
+      } else {
+        tip.style.top       = (rect.bottom + window.scrollY + 8) + 'px';
+        tip.style.transform = 'none';
+      }
+      tip.style.display = 'block';
+      e.stopPropagation();
+      return;
+    }
+    // Close if clicking anywhere else
+    const tip = document.getElementById('conf-tip');
+    if (tip) tip.style.display = 'none';
+  });
 
   // ── Init ─────────────────────────────────────
   document.addEventListener('DOMContentLoaded', boot);
