@@ -1157,10 +1157,17 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
   // Forwarding address section — only for ship plans
   const fwdHtml = isShip ? `
     <div class="form-divider">Forwarding Address</div>
-    <div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.5">
-      Your letters will be bundled and shipped to this address during the <strong>first week of every month</strong>.
-      Confidential mail will never be forwarded. Parcels are not included in forwarding.
-      <br><span style="color:var(--ink-4)">You can update your forwarding address anytime in your profile.</span>
+    <div style="font-size:12px;color:var(--ink-3);margin-bottom:14px;line-height:1.6">
+      Your letters will be bundled and shipped to your forwarding address during the <strong>first week of every following month</strong>.
+      <strong>All standard shipping fees are included in your plan.</strong>
+      Confidential mail will never be forwarded, and parcels are not included.
+      <br><br>
+      Most destinations (including <strong>Germany, United Kingdom, United States, France, Australia, the Netherlands</strong> and more)
+      fall within standard international zones. No additional fees apply unless your shipment exceeds
+      <strong>standard weight limits</strong> or incurs <strong>remote-area surcharges, customs duties, or carrier premiums</strong>,
+      in which case we will contact you in advance for approval before dispatch.
+      <br><br>
+      <span style="color:var(--ink-4)">You may update your forwarding address anytime in your profile.</span>
     </div>
     <div class="form-group">
       <label>Street Address</label>
