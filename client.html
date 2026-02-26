@@ -1183,12 +1183,14 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
         <ul style="margin:0 0 8px;padding-left:16px">
           <li>Government-issued ID (passports, driver's licences, SIN cards)</li>
           <li>Credit, debit &amp; bank cards</li>
-          <li>Financial statements &amp; tax documents</li>
-          <li>Any item our team flags via a light bend test as containing a rigid card or document</li>
+          <li>Any envelope that, when gently flexed, feels like it contains a rigid item — such as a credit card or government-issued ID like a driver's licence or passport</li>
         </ul>
-        <p style="margin:0;color:var(--ink-4)">
+        <p style="margin:0 0 8px;color:var(--ink-4)">
           These items are stored securely for in-person pickup and will <strong>never be forwarded</strong>.
           Forwarding may be arranged after you verify your identity with us in person at least once.
+        </p>
+        <p style="margin:0;color:var(--ink-4)">
+          These provisions are in place to protect our clients and uphold the integrity of our service — ensuring our platform is never used as a vehicle for fraud, identity theft, or unauthorized handling of sensitive documents.
         </p>
       </div>
       <br><br>
@@ -1200,26 +1202,26 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       <span style="color:var(--ink-4)">You may update your forwarding address anytime in your profile.</span>
     </div>
     <div class="form-group">
-      <label>Street Address</label>
+      <label>Street Address <span style="color:var(--red)">*</span></label>
       <input type="text" id="ob-addr" placeholder="123 Main Street" required>
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>City</label>
+        <label>City <span style="color:var(--red)">*</span></label>
         <input type="text" id="ob-city" placeholder="Toronto" required>
       </div>
       <div class="form-group">
-        <label>Province / State</label>
+        <label>Province / State <span style="color:var(--red)">*</span></label>
         <input type="text" id="ob-province" placeholder="ON" required>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>Postal / ZIP Code</label>
+        <label>Postal / ZIP Code <span style="color:var(--red)">*</span></label>
         <input type="text" id="ob-postal" placeholder="M5H 2S3" required>
       </div>
       <div class="form-group">
-        <label>Country</label>
+        <label>Country <span style="color:var(--red)">*</span></label>
         <input type="text" id="ob-country" value="Canada" required>
       </div>
     </div>
