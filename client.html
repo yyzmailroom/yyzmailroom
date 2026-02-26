@@ -1161,6 +1161,14 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       Your letters will be bundled and shipped to your forwarding address during the <strong>first week of every following month</strong>.
       <strong>All standard shipping fees are included in your plan.</strong>
       Confidential mail will never be forwarded, and parcels are not included.
+      <span style="display:inline-flex;align-items:center;gap:3px;position:relative;cursor:default" class="conf-tooltip-wrap">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:var(--ink-4);color:white;font-size:9px;font-weight:700;flex-shrink:0;line-height:1">i</span>
+        <span class="conf-tooltip" style="display:none;position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:280px;background:#1a1a1a;color:#f0f0f0;font-size:11px;line-height:1.55;padding:10px 12px;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:999;pointer-events:none">
+          <strong style="color:#fff;display:block;margin-bottom:4px">What is confidential mail?</strong>
+          Government-issued IDs, credit cards, financial statements, and other sensitive documents identified by our team using a light bend test will never be forwarded — even on ship plans. Forwarding of confidential mail becomes available once you have verified your identity with us in person at least once.
+          <span style="position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:10px;height:10px;background:#1a1a1a;clip-path:polygon(0 0,100% 0,50% 100%)"></span>
+        </span>
+      </span>
       <br><br>
       Most destinations (including <strong>Germany, United Kingdom, United States, France, Australia, the Netherlands</strong> and more)
       fall within standard international zones. No additional fees apply unless your shipment exceeds
