@@ -983,7 +983,7 @@ async function renderSetup(sub, access) {
   if (step === 'plan_setup') {
     await renderOnboardingForm(sub, access, stepsHtml, backBtn);
   } else if (step === 'add_recipients') {
-    renderAddRecipient(sub, access, stepsHtml, backBtn);
+    await renderAddRecipient(sub, access, stepsHtml, backBtn);
   } else if (step === 'pending_activation') {
     renderPendingActivation(sub, stepsHtml, backBtn);
   }
@@ -1379,12 +1379,43 @@ function extractProductId(sub) {
   return sub.productId || '';
 }
 
-function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
-  const pc    = STATE.planCard || (STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId]) || null;
-  const maxR  = pc ? (parseInt(pc.maxRecipients) || 1) : (STATE._pendingMaxRecipients || 1);
-  const planCardId = pc ? pc.planCardId : sub.planCardId;
+async function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
+  // Show loading skeleton while we resolve maxRecipients
+  qs('content-area').innerHTML = `
+    <div class="onboarding" id="setup-section">
+      <div class="onboard-header">
+        ${backBtn}
+        <div class="onboard-step">Step 2 of 3 — Recipients</div>
+        <div class="onboard-title">Who will receive mail at your virtual office?</div>
+      </div>
+      <div class="steps">${stepsHtml}</div>
+      <div class="onboard-card">
+        <div class="shimmer-line" style="width:80%;margin-bottom:10px"></div>
+        <div class="shimmer-line med" style="width:60%"></div>
+      </div>
+    </div>`;
 
-  // Render the page shell — recipients added dynamically
+  // Resolve maxRecipients — try planCard first, then fetch template from Plans sheet
+  let maxR = 1;
+  let planCardId = sub.planCardId || '';
+
+  // Try cached planCard
+  const pc = STATE.planCard || (STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId]) || null;
+  if (pc && pc.maxRecipients) {
+    maxR = parseInt(pc.maxRecipients) || 1;
+    if (pc.planCardId) planCardId = pc.planCardId;
+  } else if (sub.productId) {
+    // Fetch plan template to get maxRecipients from Plans sheet
+    try {
+      const res = await apiPost({ action: 'getPlanTemplate', uuid: STATE.uuid, productId: sub.productId });
+      if (res.status === 'ok' && res.template && res.template.maxRecipients) {
+        maxR = parseInt(res.template.maxRecipients) || 1;
+      }
+    } catch(e) { /* use default 1 */ }
+  } else if (STATE._pendingMaxRecipients) {
+    maxR = STATE._pendingMaxRecipients;
+  }
+
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
@@ -1396,38 +1427,47 @@ function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
       <div class="onboard-card">
 
         <!-- Intro copy -->
-        <div style="margin-bottom:22px">
-          <p style="font-size:13px;font-weight:600;color:var(--ink);margin:0 0 8px">
+        <div style="margin-bottom:24px">
+          <p style="font-size:13px;font-weight:600;color:var(--ink);margin:0 0 8px;line-height:1.5">
             Please list the individuals or businesses authorized to receive mail at your virtual office address.
           </p>
           <p style="font-size:12px;color:var(--ink-3);margin:0 0 10px;line-height:1.6">
             The names you provide will be used to:
           </p>
-          <ul style="margin:0 0 12px;padding-left:18px;font-size:12px;color:var(--ink-3);line-height:1.9">
+          <ul style="margin:0;padding-left:18px;font-size:12px;color:var(--ink-3);line-height:1.9">
             <li>Appear on all mail and package deliveries to your address</li>
             <li>Verify and authorize mail recipients on your account</li>
             <li>Ensure accurate, secure, and timely mail handling</li>
             <li>Prevent delays, returns, or rejected deliveries</li>
           </ul>
-          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);
-                      border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--ink-3)">
-            <span style="font-size:14px">👥</span>
-            Your plan supports up to <strong style="color:var(--ink);margin:0 3px">${maxR} recipient${maxR === 1 ? '' : 's'}</strong>.
-            At least one is required to activate your mailbox.
+        </div>
+
+        <!-- Plan capacity badge -->
+        <div style="padding:12px 14px;background:var(--bg);border:1px solid var(--border);
+                    border-radius:var(--radius-sm);margin-bottom:24px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:16px">👥</span>
+            <span style="font-size:13px;font-weight:600;color:var(--ink)">
+              Your plan supports up to ${maxR} recipient${maxR === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div style="font-size:12px;color:var(--ink-3);padding-left:24px">
+            At least one recipient is required to activate your mailbox.
+            ${maxR > 1 ? 'You can add the rest now or anytime later from your dashboard.' : ''}
           </div>
         </div>
 
         <!-- Recipient slots container -->
         <div id="rc-slots"></div>
 
-        <!-- Add another button (shown when slots < maxR) -->
-        <div id="rc-add-wrap" style="margin-top:12px;display:${maxR > 1 ? 'block' : 'none'}">
+        <!-- Add another button -->
+        <div id="rc-add-wrap" style="margin-top:14px;display:${maxR > 1 ? 'block' : 'none'}">
           <button type="button" id="rc-add-btn"
             onclick="rcAddSlot()"
-            style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:none;
+            style="display:flex;align-items:center;gap:6px;padding:10px 14px;background:none;
                    border:1px dashed var(--border);border-radius:var(--radius-sm);
                    font-size:12px;color:var(--ink-3);cursor:pointer;font-family:inherit;
-                   transition:all .15s;width:100%;justify-content:center"
+                   transition:all .15s;width:100%;justify-content:center;box-sizing:border-box"
             onmouseover="this.style.borderColor='var(--ink-3)';this.style.color='var(--ink)'"
             onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--ink-3)'">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -1447,11 +1487,11 @@ function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
       </div>
     </div>`;
 
-  // Render the first required slot immediately
   window._rcMaxR  = maxR;
   window._rcCount = 0;
-  rcAddSlot();
+  rcAddSlot(); // render first required slot
 }
+
 
 function rcSlotHtml(i) {
   const isFirst = i === 0;
