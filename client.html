@@ -1380,127 +1380,202 @@ function extractProductId(sub) {
 }
 
 function renderAddRecipient(sub, access, stepsHtml, backBtn = '') {
-  // planCard may already be cached — grab maxRecipients from it
-  const pc        = STATE.planCard || (STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId]) || null;
-  // maxRecipients: prefer live planCard, fall back to template value stashed during step 1
-  const maxR      = pc ? (parseInt(pc.maxRecipients) || 1)
-                       : (STATE._pendingMaxRecipients || 1);
-  const planLabel = (sub.planName || '').split('–')[0].trim() || 'Your Plan';
+  const pc    = STATE.planCard || (STATE.allPlanCards && STATE.allPlanCards[sub.subscriptionId]) || null;
+  const maxR  = pc ? (parseInt(pc.maxRecipients) || 1) : (STATE._pendingMaxRecipients || 1);
+  const planCardId = pc ? pc.planCardId : sub.planCardId;
 
-  // Build N recipient slot forms
-  const slots = Array.from({ length: maxR }, (_, i) => {
-    const isFirst = i === 0;
-    const label   = maxR === 1 ? 'Recipient' : `Recipient ${i + 1}${isFirst ? ' (required)' : ' (optional)'}`;
-    return `
-      <div class="recipient-slot" id="rec-slot-${i}" style="${i > 0 ? 'margin-top:16px;padding-top:16px;border-top:1px solid var(--border)' : ''}">
-        ${maxR > 1 ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);margin-bottom:10px">${label}</div>` : ''}
-        <div class="form-row">
-          <div class="form-group">
-            <label>Full Name${isFirst ? '' : ' <span style="color:var(--ink-4)">(optional)</span>'}</label>
-            <input type="text" id="rc-name-${i}" placeholder="Jane Smith" ${isFirst ? 'required' : ''}>
-          </div>
-          <div class="form-group">
-            <label>Company <span style="color:var(--ink-4)">(optional)</span></label>
-            <input type="text" id="rc-company-${i}" placeholder="Acme Corp">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Type</label>
-            <select id="rc-type-${i}">
-              <option value="individual">Individual</option>
-              <option value="company">Company</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Language</label>
-            <select id="rc-lang-${i}">
-              <option value="en">English</option>
-            </select>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-
-  // Info banner
-  const limitNote = maxR === 1
-    ? 'Your plan supports 1 recipient.'
-    : `Your ${planLabel} plan supports up to <strong>${maxR} recipients</strong>. Add as many as you need now — you can always add more later.`;
-
+  // Render the page shell — recipients added dynamically
   qs('content-area').innerHTML = `
     <div class="onboarding" id="setup-section">
       <div class="onboard-header">
         ${backBtn}
-        <div class="onboard-step">Step 2 of 3 — Add Recipients</div>
-        <div class="onboard-title">Who will receive mail?</div>
-        <div class="onboard-sub">These names will appear on mail delivered to your address.</div>
+        <div class="onboard-step">Step 2 of 3 — Recipients</div>
+        <div class="onboard-title">Who will receive mail at your virtual office?</div>
       </div>
       <div class="steps">${stepsHtml}</div>
       <div class="onboard-card">
-        <div style="font-size:12px;color:var(--ink-3);background:var(--bg);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:20px">
-          ${limitNote}
+
+        <!-- Intro copy -->
+        <div style="margin-bottom:22px">
+          <p style="font-size:13px;font-weight:600;color:var(--ink);margin:0 0 8px">
+            Please list the individuals or businesses authorized to receive mail at your virtual office address.
+          </p>
+          <p style="font-size:12px;color:var(--ink-3);margin:0 0 10px;line-height:1.6">
+            The names you provide will be used to:
+          </p>
+          <ul style="margin:0 0 12px;padding-left:18px;font-size:12px;color:var(--ink-3);line-height:1.9">
+            <li>Appear on all mail and package deliveries to your address</li>
+            <li>Verify and authorize mail recipients on your account</li>
+            <li>Ensure accurate, secure, and timely mail handling</li>
+            <li>Prevent delays, returns, or rejected deliveries</li>
+          </ul>
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);
+                      border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--ink-3)">
+            <span style="font-size:14px">👥</span>
+            Your plan supports up to <strong style="color:var(--ink);margin:0 3px">${maxR} recipient${maxR === 1 ? '' : 's'}</strong>.
+            At least one is required to activate your mailbox.
+          </div>
         </div>
-        <form id="recipient-form">
-          ${slots}
-          <button type="submit" class="btn btn-primary btn-full" id="rc-submit" style="margin-top:20px">
-            ${maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue'}
+
+        <!-- Recipient slots container -->
+        <div id="rc-slots"></div>
+
+        <!-- Add another button (shown when slots < maxR) -->
+        <div id="rc-add-wrap" style="margin-top:12px;display:${maxR > 1 ? 'block' : 'none'}">
+          <button type="button" id="rc-add-btn"
+            onclick="rcAddSlot()"
+            style="display:flex;align-items:center;gap:6px;padding:8px 14px;background:none;
+                   border:1px dashed var(--border);border-radius:var(--radius-sm);
+                   font-size:12px;color:var(--ink-3);cursor:pointer;font-family:inherit;
+                   transition:all .15s;width:100%;justify-content:center"
+            onmouseover="this.style.borderColor='var(--ink-3)';this.style.color='var(--ink)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--ink-3)'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add another recipient
           </button>
-        </form>
+        </div>
+
+        <!-- Submit -->
+        <button type="button" id="rc-submit"
+          onclick="rcSubmit('${planCardId}')"
+          class="btn btn-primary btn-full" style="margin-top:20px">
+          Save Recipients &amp; Continue
+        </button>
+
       </div>
     </div>`;
 
-  qs('recipient-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = qs('rc-submit');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="btn-spinner"></span> Saving...';
+  // Render the first required slot immediately
+  window._rcMaxR  = maxR;
+  window._rcCount = 0;
+  rcAddSlot();
+}
 
-    // Collect all filled slots
-    const recipients = [];
-    for (let i = 0; i < maxR; i++) {
-      const name = qs('rc-name-' + i) && qs('rc-name-' + i).value.trim();
-      if (!name) continue; // skip empty optional slots
-      recipients.push({
-        name,
-        companyName:     qs('rc-company-' + i) ? qs('rc-company-' + i).value.trim() : '',
-        type:            qs('rc-type-' + i) ? qs('rc-type-' + i).value : 'individual',
-        language:        qs('rc-lang-' + i) ? qs('rc-lang-' + i).value : 'en',
-        notifyOnArrival: true
-      });
-    }
+function rcSlotHtml(i) {
+  const isFirst = i === 0;
+  const label   = isFirst
+    ? `Recipient 1 <span style="color:var(--red)">*</span>`
+    : `Recipient ${i + 1} <span style="font-weight:400;color:var(--ink-4)">(optional)</span>`;
+  return `
+    <div id="rc-slot-${i}" style="${i > 0 ? 'margin-top:14px;padding-top:14px;border-top:1px solid var(--border)' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4)">${label}</div>
+        ${i > 0 ? `<button type="button" onclick="rcRemoveSlot(${i})"
+          style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-4);
+                 font-family:inherit;padding:2px 6px;border-radius:3px;transition:color .15s"
+          onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--ink-4)'">
+          ✕ Remove
+        </button>` : ''}
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name ${isFirst ? '<span style="color:var(--red)">*</span>' : '<span style="color:var(--ink-4)">(optional)</span>'}</label>
+          <input type="text" id="rc-name-${i}" placeholder="${isFirst ? 'e.g. Jane Smith' : 'e.g. John Doe'}" ${isFirst ? 'required' : ''}>
+        </div>
+        <div class="form-group">
+          <label>Company <span style="color:var(--ink-4)">(optional)</span></label>
+          <input type="text" id="rc-company-${i}" placeholder="e.g. Acme Corp">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="rc-type-${i}">
+            <option value="individual">Individual</option>
+            <option value="company">Company / Business</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Language</label>
+          <select id="rc-lang-${i}">
+            <option value="en">English</option>
+            <option value="fr">French</option>
+          </select>
+        </div>
+      </div>
+    </div>`;
+}
 
-    if (recipients.length === 0) {
-      toast('Please add at least one recipient name.', 'error');
-      btn.disabled = false;
-      btn.innerHTML = maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue';
+function rcAddSlot() {
+  const i       = window._rcCount;
+  const maxR    = window._rcMaxR;
+  const container = document.getElementById('rc-slots');
+  if (!container || i >= maxR) return;
+  container.insertAdjacentHTML('beforeend', rcSlotHtml(i));
+  window._rcCount++;
+  // Hide add button if at limit
+  const addWrap = document.getElementById('rc-add-wrap');
+  if (addWrap) addWrap.style.display = window._rcCount >= maxR ? 'none' : 'block';
+  // Focus the new name field
+  const nameEl = document.getElementById('rc-name-' + i);
+  if (nameEl && i > 0) nameEl.focus();
+}
+
+function rcRemoveSlot(i) {
+  const slot = document.getElementById('rc-slot-' + i);
+  if (slot) slot.remove();
+  window._rcCount--;
+  // Show add button again
+  const addWrap = document.getElementById('rc-add-wrap');
+  if (addWrap) addWrap.style.display = 'block';
+}
+
+async function rcSubmit(planCardId) {
+  const btn = document.getElementById('rc-submit');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Saving...'; }
+
+  // Collect filled slots (only slots still in DOM)
+  const recipients = [];
+  for (let i = 0; i < window._rcMaxR; i++) {
+    const nameEl = document.getElementById('rc-name-' + i);
+    if (!nameEl) continue;
+    const name = nameEl.value.trim();
+    if (i === 0 && !name) {
+      toast('Please enter at least one recipient name.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+      nameEl.focus();
       return;
     }
+    if (!name) continue;
+    recipients.push({
+      name,
+      companyName:     (document.getElementById('rc-company-' + i) || {}).value || '',
+      type:            (document.getElementById('rc-type-' + i) || {}).value    || 'individual',
+      language:        (document.getElementById('rc-lang-' + i) || {}).value    || 'en',
+      notifyOnArrival: true
+    });
+  }
 
-    try {
-      // Submit recipients one by one — server handles each
-      for (const rec of recipients) {
-        const result = await apiPost({
-          action:          'addRecipient',
-          uuid:            STATE.uuid,
-          planCardId:      sub.planCardId,
-          name:            rec.name,
-          companyName:     rec.companyName,
-          type:            rec.type,
-          language:        rec.language,
-          notifyOnArrival: rec.notifyOnArrival
-        });
-        if (result.status !== 'ok') throw new Error(result.message || 'Failed to add recipient: ' + rec.name);
-      }
+  if (recipients.length === 0) {
+    toast('Please add at least one recipient name.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+    return;
+  }
 
-      toast('Recipient' + (recipients.length > 1 ? 's' : '') + ' added!', 'success');
-      setTimeout(() => location.reload(), 800);
-    } catch (err) {
-      toast(err.message, 'error');
-      btn.disabled = false;
-      btn.innerHTML = maxR > 1 ? 'Add Recipients & Continue' : 'Add Recipient & Continue';
+  try {
+    for (const rec of recipients) {
+      const result = await apiPost({
+        action:          'addRecipient',
+        uuid:            STATE.uuid,
+        planCardId:      planCardId,
+        name:            rec.name,
+        companyName:     rec.companyName,
+        type:            rec.type,
+        language:        rec.language,
+        notifyOnArrival: rec.notifyOnArrival
+      });
+      if (result.status !== 'ok') throw new Error(result.message || 'Failed to add: ' + rec.name);
     }
-  });
+    toast('Recipient' + (recipients.length > 1 ? 's' : '') + ' saved!', 'success');
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+  }
 }
+
 
 function renderPendingActivation(sub, stepsHtml, backBtn = '') {
   // Check if there are other plans still pending setup
