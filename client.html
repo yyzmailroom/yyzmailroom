@@ -1511,22 +1511,18 @@ function rcSlotHtml(i) {
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Full Name ${isFirst ? '<span style="color:var(--red)">*</span>' : '<span style="color:var(--ink-4)">(optional)</span>'}</label>
+          <label id="rc-name-label-${i}">Full Name ${isFirst ? '<span style="color:var(--red)">*</span>' : '<span style="color:var(--ink-4)">(optional)</span>'}</label>
           <input type="text" id="rc-name-${i}" placeholder="${isFirst ? 'e.g. Jane Smith' : 'e.g. John Doe'}" ${isFirst ? 'required' : ''}>
         </div>
         <div class="form-group">
-          <label>Company <span style="color:var(--ink-4)">(optional)</span></label>
-          <input type="text" id="rc-company-${i}" placeholder="e.g. Acme Corp">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
           <label>Type</label>
-          <select id="rc-type-${i}">
+          <select id="rc-type-${i}" onchange="rcUpdateNameLabel(${i})">
             <option value="individual">Individual</option>
             <option value="company">Company / Business</option>
           </select>
         </div>
+      </div>
+      <div class="form-row">
         <div class="form-group">
           <label>Language</label>
           <select id="rc-lang-${i}">
@@ -1536,6 +1532,23 @@ function rcSlotHtml(i) {
         </div>
       </div>
     </div>`;
+}
+
+function rcUpdateNameLabel(i) {
+  const typeEl  = document.getElementById('rc-type-' + i);
+  const labelEl = document.getElementById('rc-name-label-' + i);
+  const nameEl  = document.getElementById('rc-name-' + i);
+  if (!typeEl || !labelEl || !nameEl) return;
+  const isFirst   = i === 0;
+  const isCompany = typeEl.value === 'company';
+  const reqSpan   = isFirst ? '<span style="color:var(--red)">*</span>' : '<span style="color:var(--ink-4)">(optional)</span>';
+  if (isCompany) {
+    labelEl.innerHTML = 'Company Name / DBA ' + reqSpan;
+    nameEl.placeholder = 'e.g. Acme Corp';
+  } else {
+    labelEl.innerHTML = 'Full Name ' + reqSpan;
+    nameEl.placeholder = i === 0 ? 'e.g. Jane Smith' : 'e.g. John Doe';
+  }
 }
 
 function rcAddSlot() {
@@ -1581,7 +1594,7 @@ async function rcSubmit(planCardId) {
     if (!name) continue;
     recipients.push({
       name,
-      companyName:     (document.getElementById('rc-company-' + i) || {}).value || '',
+      companyName:     '',
       type:            (document.getElementById('rc-type-' + i) || {}).value    || 'individual',
       language:        (document.getElementById('rc-lang-' + i) || {}).value    || 'en',
       notifyOnArrival: true
@@ -1601,7 +1614,7 @@ async function rcSubmit(planCardId) {
         uuid:            STATE.uuid,
         planCardId:      planCardId,
         name:            rec.name,
-        companyName:     rec.companyName,
+
         type:            rec.type,
         language:        rec.language,
         notifyOnArrival: rec.notifyOnArrival
