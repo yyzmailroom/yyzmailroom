@@ -1240,16 +1240,27 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
             <label>Business Description <span style="color:var(--ink-4)">(one sentence)</span> <span style="color:var(--red)">*</span></label>
             <input type="text" id="ob-biz" placeholder="e.g. Digital marketing agency serving SMBs" required>
           </div>
-          <div class="form-group">
-            <label>How did you hear about us? <span style="color:var(--red)">*</span></label>
-            <select id="ob-referral" required>
-              <option value="">Select...</option>
-              <option>Google Search</option>
-              <option>Referral</option>
-              <option>Walk-in</option>
-              <option>Social Media</option>
-              <option>Other</option>
-            </select>
+          <div class="form-row">
+            <div class="form-group">
+              <label>How did you hear about us? <span style="color:var(--red)">*</span></label>
+              <select id="ob-referral" required>
+                <option value="">Select...</option>
+                <option>Google Search</option>
+                <option>Referral</option>
+                <option>Walk-in</option>
+                <option>Social Media</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Which best describes you? <span style="color:var(--red)">*</span></label>
+              <select id="ob-customer-type" required>
+                <option value="">Select...</option>
+                <option value="canadian">🇨🇦 Canadian Customer</option>
+                <option value="us">🇺🇸 U.S. Customer</option>
+                <option value="international">🌍 International Customer</option>
+              </select>
+            </div>
           </div>
 
           ${fwdHtml}
@@ -1284,6 +1295,10 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
       toast('Please tell us how you heard about us.', 'error');
       btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
     }
+    if (!qs('ob-customer-type') || !qs('ob-customer-type').value) {
+      toast('Please select which best describes you.', 'error');
+      btn.disabled = false; btn.innerHTML = 'Save & Continue'; return;
+    }
 
     try {
       const result = await apiPost({
@@ -1304,6 +1319,7 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
         clientTimezone:      Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Toronto',
         businessDescription: qs('ob-biz') ? qs('ob-biz').value : '',
         referralSource:      qs('ob-referral') ? qs('ob-referral').value : '',
+        customerType:        qs('ob-customer-type') ? qs('ob-customer-type').value : '',
         friendlyName:        qs('ob-friendly-name') ? qs('ob-friendly-name').value.trim() : ''
       });
 
