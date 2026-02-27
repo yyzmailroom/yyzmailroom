@@ -7,7 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
 <style>
+  /* ── THEME CONFIG (changeable from staff panel later) ──── */
   :root {
+    --theme:      #8B1A1A;
+
     --red:        #8B1A1A;
     --red-light:  #A52020;
     --red-dim:    rgba(139,26,26,0.08);
@@ -86,22 +89,38 @@
     text-transform: uppercase; padding: 2px 8px; border-radius: 20px;
   }
   .header-right { display: flex; align-items: center; gap: 12px; }
-  .staff-name { font-size: 12px; color: var(--ink-3); }
+  .staff-name {
+    font-size: 12px; color: var(--ink-3);
+    display: flex; align-items: center; gap: 8px;
+  }
   .staff-name strong { color: var(--ink); font-weight: 500; }
+  .staff-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--red-dim); color: var(--red);
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
 
-  /* View toggle */
-  .view-toggle {
-    display: flex; gap: 2px;
-    background: var(--bg-2); border-radius: var(--radius-sm);
-    padding: 3px;
+  /* ── Main Nav ───────────────────────────────────────── */
+  .main-nav {
+    display: flex; align-items: center; gap: 3px;
   }
-  .view-btn {
-    padding: 4px 10px; border-radius: 5px;
-    font-size: 11px; font-weight: 500; color: var(--ink-3);
+  .nav-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 6px 11px; border-radius: var(--radius-sm);
+    font-size: 12px; font-weight: 500; color: var(--ink-3);
     cursor: pointer; transition: all 0.15s;
-    background: transparent;
+    background: transparent; border: none; white-space: nowrap;
+    font-family: inherit;
   }
-  .view-btn.active { background: var(--white); color: var(--ink); box-shadow: var(--shadow); }
+  .nav-btn:hover { background: var(--bg); color: var(--ink); }
+  .nav-btn.active {
+    background: var(--red); color: var(--white);
+  }
+  .nav-btn.active:hover { background: var(--red-light); }
+  .nav-btn svg { opacity: 0.7; flex-shrink: 0; }
+  .nav-btn.active svg { opacity: 1; }
 
   /* ── Layout ─────────────────────────────────────────── */
   .workspace {
@@ -451,6 +470,8 @@
   .pill.forwarding_pending { background:#E8F4FF;color:var(--blue); }
   .pill.forwarded { background:var(--green-bg);color:var(--green); }
   .pill.payment_req { background:#FEE8E8;color:var(--red); }
+  .pill.warning { background:var(--amber-bg);color:var(--amber); }
+  .pill.void { background:#F0F0F5;color:var(--ink-4); }
   .pill.expired { background:#F0F0F5;color:var(--ink-4); }
   @media (max-width: 700px) {
     .pane-left { width: 100%; border-right: none; }
@@ -465,7 +486,12 @@
 <body>
 
 <div id="loading-screen">
-  <div class="loading-logo">YYZ<span>.</span>Offices</div>
+  <div class="loading-logo">
+    <img src="https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-1-scaled.png"
+      alt="YYZ Offices" style="height:52px;width:auto;display:block;margin:0 auto"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <span style="display:none">YYZ<span>.</span>Offices</span>
+  </div>
   <div class="loading-sub">Staff Portal</div>
   <div class="loading-bar"><div class="loading-bar-fill"></div></div>
 </div>
@@ -473,19 +499,42 @@
 <div id="app">
   <header class="header">
     <div class="header-left">
-      <div class="header-logo">YYZ<span style="color:var(--red)">.</span>Offices</div>
+      <div class="header-logo">
+        <img src="https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-scaled.png"
+          alt="YYZ Offices" style="height:28px;width:auto;display:block"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+        <span style="display:none">YYZ<span style="color:var(--red)">.</span>Offices</span>
+      </div>
       <div class="staff-badge">Staff</div>
     </div>
     <div class="header-right">
-      <div class="view-toggle" id="view-toggle">
-        <button class="view-btn active" onclick="setView('split')"      id="vbtn-split">⊞ Split</button>
-        <button class="view-btn" onclick="setView('tasks')"      id="vbtn-tasks">☰ Tasks</button>
-        <button class="view-btn" onclick="setView('log')"        id="vbtn-log">✏ Log Mail</button>
-        <button class="view-btn" onclick="setView('maillog')"    id="vbtn-maillog">📬 Mail Log</button>
-        <button class="view-btn" onclick="setView('exceptions')" id="vbtn-exceptions">⚠ Exceptions</button>
-        <button class="view-btn" onclick="setView('plancards')"  id="vbtn-plancards">🗂 Plan Cards</button>
-      </div>
-      <div class="staff-name" id="header-name"></div>
+      <nav class="main-nav" id="view-toggle">
+        <button class="nav-btn active" onclick="setView('split')"      id="vbtn-split">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg>
+          Split
+        </button>
+        <button class="nav-btn" onclick="setView('tasks')"      id="vbtn-tasks">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Tasks
+        </button>
+        <button class="nav-btn" onclick="setView('log')"        id="vbtn-log">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Log Mail
+        </button>
+        <button class="nav-btn" onclick="setView('maillog')"    id="vbtn-maillog">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Mail Log
+        </button>
+        <button class="nav-btn" onclick="setView('exceptions')" id="vbtn-exceptions">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Exceptions
+        </button>
+        <button class="nav-btn" onclick="setView('plancards')"  id="vbtn-plancards">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+          Plan Cards
+        </button>
+      </nav>
+            <div class="staff-name" id="header-name"></div>
     </div>
   </header>
 
@@ -503,7 +552,7 @@ let STATE = {
   access:       null,
   tasks:        [],
   selectedTask: null,
-  view:         'split',  // split | tasks | log
+  view:         'log',    // split | tasks | log | maillog | exceptions | plancards
   logRecipient: null,
   logPlanCard:  null,
   submitting:   false
@@ -584,7 +633,9 @@ async function boot() {
   const cached = getStaffCache(STATE.uuid);
   if (cached && cached.status === 'staff') {
     STATE.access = cached;
-    qs('header-name').innerHTML = `<strong>${cached.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${cached.role}</span>`;
+    const _cn = cached.name || 'Staff';
+    const _ci = _cn.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    qs('header-name').innerHTML = `<span class="staff-avatar">${_ci}</span><strong>${_cn}</strong><span style="color:var(--ink-4);font-size:11px">${cached.role}</span>`;
     hideLoading();
     await loadTasks();
     warmRecipientCache(); // pre-warm in background — makes first search instant
@@ -608,7 +659,9 @@ async function boot() {
       return;
     }
 
-    qs('header-name').innerHTML = `<strong>${data.name}</strong> <span style="color:var(--ink-4)">·</span> <span>${data.role}</span>`;
+    const _dn = data.name || 'Staff';
+    const _di = _dn.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    qs('header-name').innerHTML = `<span class="staff-avatar">${_di}</span><strong>${_dn}</strong><span style="color:var(--ink-4);font-size:11px">${data.role}</span>`;
     await loadTasks();
     warmRecipientCache(); // pre-warm in background — makes first search instant
     renderWorkspace();
