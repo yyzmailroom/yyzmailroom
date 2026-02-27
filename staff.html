@@ -2317,28 +2317,52 @@ function renderPlanCardsList(planCards) {
               + Add Temporary
             </button>
           </div>
-          <div id="add-temp-${i}" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
-            <div style="font-size:12px;font-weight:500;color:var(--amber);margin-bottom:8px">⚡ Temporary Recipient (staff only)</div>
-            <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-              <div style="flex:1;min-width:160px">
-                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Name *</label>
-                <input type="text" id="tmp-name-${i}" placeholder="Full name" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+          <div id="add-temp-${i}" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:14px;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:12px">⚡ Temporary Recipient (staff only)</div>
+            <!-- Row 1: First name / Last name / Type -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+              <div>
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">First Name *</label>
+                <input type="text" id="tmp-fname-${i}" placeholder="Jane"
+                  oninput="tmpCheckName(${i})"
+                  style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
               </div>
-              <div style="flex:1;min-width:100px">
+              <div id="tmp-lname-wrap-${i}">
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Last Name *</label>
+                <input type="text" id="tmp-lname-${i}" placeholder="Smith"
+                  oninput="tmpCheckName(${i})"
+                  style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+              </div>
+              <div>
                 <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Type</label>
-                <select id="tmp-type-${i}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+                <select id="tmp-type-${i}" onchange="tmpTypeChange(${i})"
+                  style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
                   <option value="individual">Individual</option>
                   <option value="company">Company</option>
                 </select>
               </div>
-              <div style="flex:1;min-width:160px">
-                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Notes</label>
-                <input type="text" id="tmp-notes-${i}" placeholder="e.g. Guest, courier, etc." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+            </div>
+            <!-- Row 2: Language / Notes -->
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;margin-bottom:10px">
+              <div>
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Language</label>
+                <select id="tmp-lang-${i}" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                </select>
               </div>
-              <div style="display:flex;gap:6px">
-                <button class="btn btn-primary btn-sm" onclick="submitAddTempRecipient('${pc.planCardId}',${i})">Add</button>
-                <button class="btn btn-secondary btn-sm" onclick="qs('add-temp-${i}').style.display='none'">Cancel</button>
+              <div>
+                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">Notes <span style="color:var(--ink-4);text-transform:none;letter-spacing:0">(optional)</span></label>
+                <input type="text" id="tmp-notes-${i}" placeholder="e.g. Guest, courier, etc."
+                  style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
               </div>
+            </div>
+            <!-- Name hint -->
+            <div id="tmp-hint-${i}" style="display:none;font-size:11px;color:var(--red);margin-bottom:8px">Please enter both first and last name.</div>
+            <!-- Actions -->
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-sm" onclick="submitAddTempRecipient('${pc.planCardId}',${i})">Add</button>
+              <button class="btn btn-secondary btn-sm" onclick="qs('add-temp-${i}').style.display='none';tmpReset(${i})">Cancel</button>
             </div>
           </div>
 
@@ -2392,25 +2416,84 @@ function openAddTempRecipient(planCardId, i) {
 }
 
 async function submitAddTempRecipient(planCardId, i) {
-  const nameEl  = qs('tmp-name-'  + i);
-  const typeEl  = qs('tmp-type-'  + i);
-  const notesEl = qs('tmp-notes-' + i);
-  if (!nameEl || !nameEl.value.trim()) { toast('Name is required', 'error'); return; }
+  const fnameEl = document.getElementById('tmp-fname-' + i);
+  const lnameEl = document.getElementById('tmp-lname-' + i);
+  const typeEl  = document.getElementById('tmp-type-'  + i);
+  const langEl  = document.getElementById('tmp-lang-'  + i);
+  const notesEl = document.getElementById('tmp-notes-' + i);
+  const hintEl  = document.getElementById('tmp-hint-'  + i);
+  const type    = typeEl ? typeEl.value : 'individual';
+  const fname   = fnameEl ? fnameEl.value.trim() : '';
+  const lname   = lnameEl ? lnameEl.value.trim() : '';
+  const name    = type === 'company' ? fname : [fname, lname].filter(Boolean).join(' ');
+
+  if (!fname) { toast('First name is required.', 'error'); if (fnameEl) fnameEl.focus(); return; }
+  if (type === 'individual' && !lname) {
+    if (hintEl) hintEl.style.display = 'block';
+    toast('Please enter both first and last name.', 'error');
+    if (lnameEl) lnameEl.focus();
+    return;
+  }
+  if (hintEl) hintEl.style.display = 'none';
+
   try {
     const result = await apiPost({
       action:     'addTempRecipient',
       uuid:       STATE.uuid,
       planCardId,
-      name:       nameEl.value.trim(),
-      type:       typeEl ? typeEl.value : 'individual',
+      name,
+      type,
+      language:   langEl ? langEl.value : 'en',
       notes:      notesEl ? notesEl.value.trim() : ''
     });
     if (result.status === 'ok') {
       toast('Temporary recipient added', 'success');
       qs('add-temp-' + i).style.display = 'none';
+      tmpReset(i);
       await loadPlanCardsView();
     } else throw new Error(result.message || 'Failed');
   } catch(err) { toast(err.message, 'error'); }
+}
+
+function tmpTypeChange(i) {
+  const typeEl  = document.getElementById('tmp-type-'  + i);
+  const lWrap   = document.getElementById('tmp-lname-wrap-' + i);
+  const lEl     = document.getElementById('tmp-lname-' + i);
+  const fnLabel = document.querySelector('#add-temp-' + i + ' label');
+  const isComp  = typeEl && typeEl.value === 'company';
+  if (lWrap) lWrap.style.display = isComp ? 'none' : '';
+  // Update first name label and placeholder
+  const fEl = document.getElementById('tmp-fname-' + i);
+  if (fEl) fEl.placeholder = isComp ? 'Company name' : 'Jane';
+  // Clear last name if switching to company
+  if (isComp && lEl) lEl.value = '';
+}
+
+function tmpCheckName(i) {
+  const typeEl  = document.getElementById('tmp-type-' + i);
+  const fnEl    = document.getElementById('tmp-fname-' + i);
+  const lnEl    = document.getElementById('tmp-lname-' + i);
+  const hintEl  = document.getElementById('tmp-hint-'  + i);
+  if (!hintEl) return;
+  const isInd = !typeEl || typeEl.value === 'individual';
+  const fn = fnEl ? fnEl.value.trim() : '';
+  const ln = lnEl ? lnEl.value.trim() : '';
+  hintEl.style.display = (isInd && fn.length > 0 && !ln) ? 'block' : 'none';
+}
+
+function tmpReset(i) {
+  ['tmp-fname-','tmp-lname-','tmp-notes-'].forEach(p => {
+    const el = document.getElementById(p + i);
+    if (el) el.value = '';
+  });
+  const typeEl = document.getElementById('tmp-type-' + i);
+  if (typeEl) typeEl.value = 'individual';
+  const langEl = document.getElementById('tmp-lang-' + i);
+  if (langEl) langEl.value = 'en';
+  const hintEl = document.getElementById('tmp-hint-' + i);
+  if (hintEl) hintEl.style.display = 'none';
+  const lWrap = document.getElementById('tmp-lname-wrap-' + i);
+  if (lWrap) lWrap.style.display = '';
 }
 
 
