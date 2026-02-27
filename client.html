@@ -103,9 +103,17 @@
     display: flex; align-items: center; gap: 12px;
   }
   .client-name {
-    font-size: 13px; color: var(--ink-3); font-weight: 400;
+    font-size: 12px; color: var(--ink-3); font-weight: 400;
+    display: flex; align-items: center; gap: 8px;
   }
   .client-name strong { color: var(--ink); font-weight: 500; }
+  .client-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--red-dim); color: var(--red);
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
 
   /* ── Banner ─────────────────────────────────────────── */
   .banner {
@@ -455,25 +463,38 @@
   }
 
   /* ── Tabs ───────────────────────────────────────────── */
-  .tabs {
-    display: flex; gap: 0;
-    border-bottom: 1px solid var(--border);
+  .tabs-bar-wrap {
     background: var(--white);
-    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 20px;
     position: sticky; top: 56px; z-index: 90;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .tabs {
+    display: flex; gap: 3px;
+    background: var(--bg-2);
+    border-radius: 8px;
+    padding: 3px;
   }
   .tab {
-    padding: 12px 16px;
-    font-size: 13px; font-weight: 500;
+    padding: 6px 18px;
+    font-size: 12px; font-weight: 500;
     color: var(--ink-3);
     cursor: pointer;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
     transition: all 0.15s;
     white-space: nowrap;
+    font-family: inherit;
   }
-  .tab.active { color: var(--red); border-color: var(--red); }
-  .tab:hover:not(.active) { color: var(--ink-2); }
+  .tab.active {
+    background: var(--white);
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .tab:hover:not(.active) { color: var(--ink-2); background: rgba(255,255,255,0.5); }
 
   /* ── Toast ──────────────────────────────────────────── */
   .toast-container {
@@ -492,12 +513,33 @@
   @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
   /* ── Subscription switcher ─────────────────────────── */
-  .sub-switcher { display:flex; gap:0; padding:0 24px; background:var(--bg-2); border-bottom:1px solid var(--border); overflow-x:auto; }
-  .sub-pill { padding:10px 18px; font-size:13px; font-weight:500; cursor:pointer; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--ink-3); white-space:nowrap; transition:all 0.15s; margin-bottom:-1px; }
-  .sub-pill:hover { color:var(--ink); background:var(--bg); }
-  .sub-pill.active { color:var(--ink); border-bottom-color:var(--ink); font-weight:600; }
-  .sub-pill.blocked { color:var(--red); }
-  .sub-pill.active.blocked { border-bottom-color:var(--red); }
+  .sub-switcher {
+    display: flex; gap: 6px;
+    padding: 10px 20px;
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    align-items: center;
+  }
+  .sub-switcher::-webkit-scrollbar { display: none; }
+  .sub-pill {
+    padding: 6px 14px;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1.5px solid var(--border);
+    border-radius: 20px;
+    background: transparent; color: var(--ink-3);
+    white-space: nowrap; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: inherit;
+  }
+  .sub-pill:hover { color: var(--ink); border-color: var(--ink-3); background: var(--bg); }
+  .sub-pill.active {
+    background: var(--ink); color: var(--white);
+    border-color: var(--ink); font-weight: 600;
+  }
+  .sub-pill.active:hover { background: var(--ink-2); border-color: var(--ink-2); }
+  .sub-pill.blocked { color: var(--red); border-color: var(--red-border); }
+  .sub-pill.active.blocked { background: var(--red); border-color: var(--red); color: var(--white); }
   /* ── Plan card grid ─────────────────────────────────── */
   .plan-card-grid { display:flex; flex-direction:column; gap:12px; }
 
@@ -670,6 +712,10 @@ function setCachedAuth(uuid, data) {
   try { sessionStorage.setItem('auth_' + uuid, JSON.stringify({ data, ts: Date.now() })); } catch(e) {}
 }
 
+function clearCachedAuth(uuid) {
+  try { sessionStorage.removeItem('auth_' + uuid); } catch(e) {}
+}
+
 async function boot() {
   STATE.uuid = getUUID();
 
@@ -731,7 +777,9 @@ function hideLoading() {
 
 // ── Client Render ─────────────────────────────────────────
 function renderClient(access) {
-  qs('header-name').innerHTML = `<strong>${access.name}</strong>`;
+  const _hn = access.name || access.email || 'Client';
+  const _initials = _hn.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  qs('header-name').innerHTML = `<span class="client-avatar">${_initials}</span><strong>${_hn}</strong>`;
 
   const subs = (access.subscriptions || []).filter(s => s.subscriptionId);
   if (!subs.length) {
@@ -739,8 +787,10 @@ function renderClient(access) {
     return;
   }
 
-  // Pick best sub: prefer ACTIVE, then CANCELED_WITH_ACCESS, then first
-  const best = subs.find(s => s.accessStatus === 'ACTIVE')
+  // Pick best sub: prefer fully set-up ACTIVE, then any ACTIVE, then CANCELED_WITH_ACCESS, then first
+  const best = subs.find(s => s.accessStatus === 'ACTIVE' && !s.setupRequired)
+    || subs.find(s => s.accessStatus === 'CANCELED_WITH_ACCESS' && !s.setupRequired)
+    || subs.find(s => s.accessStatus === 'ACTIVE')
     || subs.find(s => s.accessStatus === 'CANCELED_WITH_ACCESS')
     || subs[0];
 
@@ -749,13 +799,25 @@ function renderClient(access) {
 
   renderSubscriptionSwitcher(access);
 
-  // Check how many subs need setup
-  const pendingSetup = subs.filter(s => s.canAccess && s.setupRequired);
-  if (pendingSetup.length > 1) {
-    // Multiple plans need setup — show selection screen
+  // If best sub is fully live, go straight to dashboard — never hijack into another plan's setup
+  if (!best.setupRequired) {
+    loadAndRenderSub(best, access);
+    return;
+  }
+
+  // All accessible subs still need setup — figure out where to send them
+  const pendingSetup   = subs.filter(s => s.canAccess && s.setupRequired);
+  const needsSelection = pendingSetup.filter(s => s.setupStep === 'plan_setup');
+
+  if (needsSelection.length > 1) {
     renderPlanSelection(access);
   } else {
-    loadAndRenderSub(best, access);
+    // One plan to set up or resume mid-flow
+    const priority   = ['add_recipients', 'plan_setup'];
+    const resumeSub  = pendingSetup.slice().sort((a, b) =>
+      priority.indexOf(a.setupStep) - priority.indexOf(b.setupStep)
+    )[0] || best;
+    loadAndRenderSub(resumeSub, access);
   }
 }
 
@@ -771,9 +833,13 @@ function renderSubscriptionSwitcher(access) {
       ${subs.map(s => {
         const isActive  = s.subscriptionId === (STATE.activeSub || {}).subscriptionId;
         const isBlocked = !s.canAccess;
+        const needsSetup = s.canAccess && s.setupRequired;
         const label = getPlanFriendlyName(s);
+        const badge = needsSetup
+          ? `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--blue-bg);color:var(--blue);letter-spacing:0.03em;text-transform:uppercase">Setup</span>`
+          : '';
         return `<div class="sub-pill ${isActive ? 'active' : ''} ${isBlocked && !isActive ? 'blocked' : ''}"
-          onclick="switchSubscription('${s.subscriptionId}')">${label}</div>`;
+          onclick="switchSubscription('${s.subscriptionId}')">${label}${badge}</div>`;
       }).join('')}
     </div>`;
 }
@@ -782,12 +848,12 @@ async function switchSubscription(subscriptionId) {
   const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
   if (!sub) return;
   STATE.activeSub = sub;
-  // Clear ALL cached data — each subscription is completely independent
+  // Clear per-sub data but preserve allPlanCards so friendlyNames stay visible in switcher
   STATE.mailLog      = [];
   STATE.planCard     = null;
   STATE.recipients   = [];
   STATE.agents       = [];
-  STATE.allPlanCards = {};
+  // Keep allPlanCards intact — it holds friendlyNames for the switcher labels
   _plansTabActiveSub = subscriptionId; // reset plan tab to new sub
   renderSubscriptionSwitcher(STATE.access);
   // Show shimmer in content area while loading
@@ -839,6 +905,17 @@ function renderBanner(sub) {
     ? `<button class="banner-btn" onclick="handleBannerAction('${b.setupStep}')">${b.actionLabel}</button>`
     : '';
 
+  // For setup banners on multi-plan dashboards, show which plan needs setup
+  const pendingSetupSubs = (STATE.allSubs || []).filter(s =>
+    s.canAccess && s.setupRequired && s.subscriptionId !== (STATE.activeSub || {}).subscriptionId
+  );
+  const pendingBanners = pendingSetupSubs.length > 0 && b.type !== 'setup_required'
+    ? pendingSetupSubs.map(s => {
+        const label = getPlanFriendlyName(s);
+        return `<button class="banner-btn outline" style="margin-left:6px" onclick="switchSubscription('${s.subscriptionId}')">${label} — Finish Setup →</button>`;
+      }).join('')
+    : '';
+
   area.innerHTML = `
     <div class="banner ${typeClass}">
       <span class="banner-icon">${icon}</span>
@@ -846,7 +923,7 @@ function renderBanner(sub) {
         <strong>${b.title || ''}</strong>
         ${b.message || ''}
       </div>
-      ${btnHtml}
+      ${btnHtml}${pendingBanners}
     </div>`;
 }
 
@@ -898,7 +975,8 @@ function renderPlanSelection(access) {
   const subs = STATE.allSubs || [];
 
   // Only show pending subs (no planCard yet or status = pending_setup)
-  const pending = subs.filter(s => s.canAccess && s.setupRequired);
+  // Only show subs still on step 1 (plan_setup) — mid-flow subs are handled by renderClient
+  const pending = subs.filter(s => s.canAccess && s.setupRequired && s.setupStep === 'plan_setup');
 
   // Should not land here with 0 or 1 pending — but guard anyway
   if (pending.length === 0) { renderDashboard(subs[0], access); return; }
@@ -985,7 +1063,8 @@ async function renderSetup(sub, access) {
   } else if (step === 'add_recipients') {
     await renderAddRecipient(sub, access, stepsHtml, backBtn);
   } else if (step === 'pending_activation') {
-    renderPendingActivation(sub, stepsHtml, backBtn);
+    // Legacy step — recipients already active, show success
+    renderOnboardingSuccess(sub.planCardId);
   }
 }
 
@@ -1361,6 +1440,7 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
 
       if (result.status === 'ok') {
         toast('Plan set up successfully!', 'success');
+        clearCachedAuth(STATE.uuid);
         setTimeout(() => location.reload(), 800);
       } else {
         throw new Error(result.message || 'Setup failed');
@@ -1512,11 +1592,15 @@ function rcSlotHtml(i) {
       <div class="form-row">
         <div class="form-group">
           <label id="rc-name-label-${i}">Full Name ${isFirst ? '<span style="color:var(--red)">*</span>' : '<span style="color:var(--ink-4)">(optional)</span>'}</label>
-          <input type="text" id="rc-name-${i}" placeholder="${isFirst ? 'e.g. Jane Smith' : 'e.g. John Doe'}" ${isFirst ? 'required' : ''}>
+          <input type="text" id="rc-name-${i}" placeholder="${isFirst ? 'e.g. Jane Smith' : 'e.g. John Doe'}" ${isFirst ? 'required' : ''}
+            oninput="rcCheckFullName(${i})">
+          <div id="rc-name-hint-${i}" style="font-size:11px;color:var(--ink-4);margin-top:4px;display:none">
+            Please enter both first and last name.
+          </div>
         </div>
         <div class="form-group">
           <label>Type</label>
-          <select id="rc-type-${i}" onchange="rcUpdateNameLabel(${i})">
+          <select id="rc-type-${i}" onchange="rcUpdateNameLabel(${i});rcCheckFullName(${i})">
             <option value="individual">Individual</option>
             <option value="company">Company / Business</option>
           </select>
@@ -1549,6 +1633,18 @@ function rcUpdateNameLabel(i) {
     labelEl.innerHTML = 'Full Name ' + reqSpan;
     nameEl.placeholder = i === 0 ? 'e.g. Jane Smith' : 'e.g. John Doe';
   }
+}
+
+function rcCheckFullName(i) {
+  const nameEl  = document.getElementById('rc-name-' + i);
+  const typeEl  = document.getElementById('rc-type-' + i);
+  const hintEl  = document.getElementById('rc-name-hint-' + i);
+  if (!nameEl || !hintEl) return;
+  const isIndividual = !typeEl || typeEl.value === 'individual';
+  const val = nameEl.value.trim();
+  const twoWords = val.split(/\s+/).filter(Boolean).length >= 2;
+  // Show hint only if individual, has typed something, but only one word
+  hintEl.style.display = (isIndividual && val.length > 0 && !twoWords) ? 'block' : 'none';
 }
 
 function rcAddSlot() {
@@ -1585,6 +1681,9 @@ async function rcSubmit(planCardId) {
     const nameEl = document.getElementById('rc-name-' + i);
     if (!nameEl) continue;
     const name = nameEl.value.trim();
+    const typeEl = document.getElementById('rc-type-' + i);
+    const isIndividual = !typeEl || typeEl.value === 'individual';
+
     if (i === 0 && !name) {
       toast('Please enter at least one recipient name.', 'error');
       if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
@@ -1592,6 +1691,14 @@ async function rcSubmit(planCardId) {
       return;
     }
     if (!name) continue;
+
+    // For individuals, require at least two words (first + last name)
+    if (isIndividual && name.split(/\s+/).filter(Boolean).length < 2) {
+      toast('Please enter a full name (first and last) for recipient ' + (i + 1) + '.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+      nameEl.focus();
+      return;
+    }
     recipients.push({
       name,
       companyName:     '',
@@ -1621,8 +1728,9 @@ async function rcSubmit(planCardId) {
       });
       if (result.status !== 'ok') throw new Error(result.message || 'Failed to add: ' + rec.name);
     }
-    toast('Recipient' + (recipients.length > 1 ? 's' : '') + ' saved!', 'success');
-    setTimeout(() => location.reload(), 800);
+    // Plan is now active — show success screen instead of dumping into next plan
+    clearCachedAuth(STATE.uuid);
+    renderOnboardingSuccess(planCardId);
   } catch (err) {
     toast(err.message, 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
@@ -1630,40 +1738,61 @@ async function rcSubmit(planCardId) {
 }
 
 
-function renderPendingActivation(sub, stepsHtml, backBtn = '') {
-  // Check if there are other plans still pending setup
-  const morePending = (STATE.allSubs || []).filter(s =>
-    s.canAccess && s.setupRequired && s.subscriptionId !== sub.subscriptionId
+function renderOnboardingSuccess(planCardId) {
+  // Check if there are other plans still needing setup (plan_setup step only)
+  const allSubs   = STATE.allSubs || [];
+  const nextPlans = allSubs.filter(s =>
+    s.canAccess && s.setupRequired && s.setupStep === 'plan_setup'
   );
-  const nextBtn = morePending.length > 0 ? `
-    <button onclick="renderPlanSelection(STATE.access)"
-      style="margin-top:20px;padding:10px 24px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
-      Set Up Next Plan →
-    </button>` : '';
+
+  const nextBtn = nextPlans.length > 0 ? `
+    <div style="margin-top:12px;padding-top:16px;border-top:1px solid var(--border)">
+      <p style="font-size:12px;color:var(--ink-3);margin:0 0 12px;line-height:1.6">
+        You have <strong>${nextPlans.length} other plan${nextPlans.length > 1 ? 's' : ''}</strong>
+        that ${nextPlans.length > 1 ? 'are' : 'is'} ready to be set up whenever you're ready.
+      </p>
+      <button onclick="renderPlanSelection(STATE.access)"
+        class="btn btn-full"
+        style="background:none;border:1px solid var(--border);color:var(--ink-3);
+               font-size:13px;padding:10px;border-radius:var(--radius-sm);
+               cursor:pointer;font-family:inherit;transition:all .15s"
+        onmouseover="this.style.borderColor='var(--ink-3)';this.style.color='var(--ink)'"
+        onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--ink-3)'">
+        Set up another plan →
+      </button>
+    </div>` : '';
 
   qs('content-area').innerHTML = `
-    <div class="onboarding">
-      <div class="onboard-header">
-        ${backBtn}
-        <div class="onboard-step">Step 3 of 3 — Activation</div>
-        <div class="onboard-title">Almost there!</div>
-        <div class="onboard-sub">Our team is reviewing your mailbox setup. You'll receive a confirmation once activated.</div>
-      </div>
-      <div class="steps">${stepsHtml}</div>
-      <div class="onboard-card" style="text-align:center; padding: 40px 24px;">
-        <div style="font-size:40px; margin-bottom:16px;">⏳</div>
-        <div style="font-size:15px; font-weight:600; color:var(--ink); margin-bottom:8px;">Pending Activation</div>
-        <p style="font-size:13px; color:var(--ink-3); line-height:1.6;">
-          Your recipient has been submitted and is pending review by our team.
-          This usually takes less than one business day.
-        </p>
-        <p style="font-size:12px; color:var(--ink-4); margin-top:16px;">
-          Plan: <strong>${sub.planName}</strong>
-        </p>
+    <div class="onboarding" id="setup-section">
+      <div class="onboard-card" style="text-align:center;padding:40px 28px">
+
+        <div style="width:56px;height:56px;border-radius:50%;background:#e8f5e9;
+                    display:flex;align-items:center;justify-content:center;
+                    margin:0 auto 20px;font-size:26px">✅</div>
+
+        <div style="font-size:22px;font-weight:700;color:var(--ink);margin-bottom:8px">
+          You're all set!
+        </div>
+        <div style="font-size:13px;color:var(--ink-3);line-height:1.7;margin-bottom:24px;max-width:340px;margin-left:auto;margin-right:auto">
+          Your mailbox is active and ready to receive mail.
+          Our team will notify you as soon as your first piece of mail arrives.
+        </div>
+
+        <button onclick="clearCachedAuth(STATE.uuid); location.reload();"
+          class="btn btn-primary btn-full" style="font-size:14px;padding:13px">
+          Go to My Dashboard
+        </button>
+
         ${nextBtn}
+
       </div>
     </div>`;
+
+  // Restore subscription switcher
+  const switcher = qs('sub-switcher-area');
+  if (switcher) switcher.style.display = '';
 }
+
 
 function extractProductId(sub) {
   return sub.productId || '';
@@ -1681,18 +1810,20 @@ function skeletonCard(lines = 2) {
 async function renderDashboard(sub, access) {
   // Render shell + skeleton instantly
   qs('content-area').innerHTML = `
-    <div id="tabs-bar">
+    <div id="tabs-bar" class="tabs-bar-wrap">
       <div class="tabs">
         <button class="tab active" id="tab-mail"   onclick="switchTab('mail')">Mail</button>
         <button class="tab"        id="tab-plans"  onclick="switchTab('plans')">My Plan</button>
       </div>
-      <div id="mail-refresh-ts"  style="font-size:11px;color:var(--ink-4);padding:0 16px;display:none"></div>
-      <div id="plans-refresh-ts" style="font-size:11px;color:var(--ink-4);padding:0 16px;display:none"></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="mail-refresh-ts"  style="font-size:11px;color:var(--ink-4);display:none"></div>
+        <div id="plans-refresh-ts" style="font-size:11px;color:var(--ink-4);display:none"></div>
+      </div>
     </div>
-    <div id="tab-mail-content">
+    <div id="tab-mail-content" class="main">
       <div id="mail-log-area">${skeletonCard(3)}</div>
     </div>
-    <div id="tab-plans-content" style="display:none">
+    <div id="tab-plans-content" class="main" style="display:none">
       <div id="plans-area">${skeletonCard(2)}</div>
     </div>`;
 
@@ -1766,61 +1897,29 @@ function getPlanFriendlyName(s) {
   return (s.planName || '').split('–')[0].trim() || s.subscriptionId.slice(-8);
 }
 
-// ── Plan switcher (multi-sub) ─────────────────────────────
-let _plansTabActiveSub = null;
-
-function renderPlansTab(sub, access, allSubs) {
-  const plansArea = qs('plans-area');
-  if (!plansArea) return;
-
-  const activeSub = allSubs.find(s => s.subscriptionId === _plansTabActiveSub) || sub;
-  const pc = STATE.allPlanCards && STATE.allPlanCards[activeSub.subscriptionId];
-  const recipients = STATE.recipients || [];
-
-  const tabsHtml = allSubs.length > 1 ? `
-    <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto">
-      ${allSubs.map(s => {
-        const isActive = s.subscriptionId === activeSub.subscriptionId;
-        const label    = getPlanFriendlyName(s);
-        return `<button onclick="switchPlanTab('${s.subscriptionId}')"
-          style="padding:8px 16px;background:none;border:none;border-bottom:2px solid ${isActive?'var(--ink)':'transparent'};
-                 font-size:13px;font-weight:${isActive?'600':'400'};color:${isActive?'var(--ink)':'var(--ink-3)'};
-                 cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s">${label}</button>`;
-      }).join('')}
-    </div>` : '';
-
-  plansArea.innerHTML = tabsHtml + buildPlanCard(activeSub, access, pc, recipients);
-  attachPlanCardListeners(activeSub, pc);
-}
-
-function switchPlanTab(subscriptionId) {
-  _plansTabActiveSub = subscriptionId;
-  const allSubs = STATE.allSubs || [];
-  renderPlansTab(STATE.activeSub, STATE.access, allSubs);
-}
-
 // ── buildPlanCard ─────────────────────────────────────────
 function buildPlanCard(sub, access, pc, recipients) {
-  const allSubs  = STATE.allSubs || [sub];
-  const billing  = sub.interval === 'year' ? 'Annual' : 'Monthly';
+  const billing  = pc ? (pc.billingCycle === 'yearly' || pc.billingCycle === 'year' || sub.interval === 'year' ? 'Annual' : 'Monthly') : (sub.interval === 'year' ? 'Annual' : 'Monthly');
   const safeId   = (sub.subscriptionId || sub.planCardId || 'plan').replace(/[^a-zA-Z0-9_-]/g, '_');
 
-  const officialPlanName = (sub.planName || '—').split('–')[0].trim();
+  const officialPlanName = ((pc && pc.planName) || sub.planName || '—').split('–')[0].trim();
   const friendlyPlanName = (pc && pc.friendlyName && !pc.friendlyName.startsWith('TEMP:'))
     ? pc.friendlyName.trim() : null;
   const planName = friendlyPlanName || officialPlanName;
 
-  // Virtual office address
-  const officeAddr = pc && pc.locationId ? '(address on file)' : '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
+  // Address
+  const officeAddr = pc && pc.locationAddress
+    ? [pc.locationAddress, pc.locationCity, pc.locationProvince, pc.locationPostal].filter(Boolean).join(', ')
+    : '448 Gibraltar Dr, Unit 100, Mississauga, ON L5T 2N8';
 
   // Usage
-  const mailLimit    = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
-  const parcelLimit  = pc ? (parseInt(pc.parcelLimit) || 0) : 0;
-  const mailsUsed    = pc ? (parseInt(pc.mailsUsed)   || 0) : 0;
-  const parcelsUsed  = pc ? (parseInt(pc.parcelsUsed) || 0) : 0;
-  const mailPct      = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
-  const parcelPct    = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
-  const bar = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
+  const mailLimit   = pc ? (parseInt(pc.mailLimit)   || 0) : 0;
+  const parcelLimit = pc ? (parseInt(pc.parcelLimit)  || 0) : 0;
+  const mailsUsed   = pc ? (parseInt(pc.mailsUsed)    || 0) : 0;
+  const parcelsUsed = pc ? (parseInt(pc.parcelsUsed)  || 0) : 0;
+  const mailPct     = mailLimit   ? Math.min(100, Math.round(mailsUsed   / mailLimit   * 100)) : 0;
+  const parcelPct   = parcelLimit ? Math.min(100, Math.round(parcelsUsed / parcelLimit * 100)) : 0;
+  const barClass    = pct => pct < 60 ? 'safe' : pct < 85 ? 'warn' : 'danger';
 
   // Forwarding
   const hasFwd  = pc && pc.autoFeature === 'ship';
@@ -1834,131 +1933,177 @@ function buildPlanCard(sub, access, pc, recipients) {
 
   const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
   const _tempRecs = recipients.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
+  const allRecs   = [..._regRecs, ..._tempRecs];
 
-  const _renderClientRec = r => {
-    const isTemp   = r.notes && r.notes.startsWith('TEMP:');
-    const statusDot = r.status === 'active'
-      ? `<span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px"></span>`
-      : `<span style="width:7px;height:7px;border-radius:50%;background:var(--amber);display:inline-block;margin-right:5px"></span>`;
-    return `<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">
-      ${statusDot}
-      <span style="flex:1;color:var(--ink)">${r.name || '—'}</span>
-      ${r.companyName ? `<span style="font-size:11px;color:var(--ink-4)">${r.companyName}</span>` : ''}
-      ${isTemp ? `<span style="font-size:10px;background:var(--amber-bg);color:var(--amber);padding:2px 6px;border-radius:3px;margin-left:6px">Pending</span>` : ''}
-    </div>`;
-  };
-
-  const addRecipientForm = canAddR ? `
-    <form id="add-rec-form-${safeId}" style="margin-top:12px" onsubmit="submitAddRecipient(event,'${sub.subscriptionId}','${safeId}')">
-      <div class="form-row" style="margin-bottom:8px">
-        <input type="text" id="ar-name-${safeId}" placeholder="Full Name" required style="font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;flex:1">
-        <input type="text" id="ar-company-${safeId}" placeholder="Company (optional)" style="font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;flex:1">
-      </div>
-      <button type="submit" id="ar-btn-${safeId}" style="font-size:12px;padding:7px 14px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit">
-        + Add Recipient
-      </button>
-    </form>` : `<div style="font-size:12px;color:var(--ink-4);margin-top:10px">Recipient limit reached (${maxR}/${maxR})</div>`;
-
-  const planHtml = `
-    <div class="plan-card-item">
-      <!-- Header: friendly name (editable) -->
-      <div style="margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div id="fname-display-wrap-${safeId}" style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
-          <div id="fname-display-${safeId}" style="font-size:15px;font-weight:600;color:var(--ink)">${planName}</div>
-          <button onclick="openFriendlyNameEdit('${pc ? pc.planCardId : ''}','${safeId}')"
-            style="background:none;border:none;cursor:pointer;padding:2px 4px;color:var(--ink-4);font-size:11px;font-family:inherit;transition:color .15s"
-            onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink-4)'" title="Edit nickname">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-        </div>
-        <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:4px">
-          <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp, Holding Co"
-            style="font-size:13px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;outline:none;width:180px"
-            onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
-          <button id="fname-save-${safeId}" onclick="saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}')"
-            style="font-size:11px;padding:5px 10px;background:var(--ink);color:var(--white);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit">Save</button>
-          <button onclick="closeFriendlyNameEdit('${safeId}')"
-            style="font-size:11px;padding:5px 8px;background:none;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;color:var(--ink-3)">✕</button>
-        </div>
-        ${friendlyPlanName ? `<div style="font-size:11px;color:var(--ink-4);margin-bottom:1px">${officialPlanName}</div>` : ''}
-        <div style="font-size:12px;color:var(--ink-4)">${billing}${sub.planAmountFormatted ? ' · ' + sub.planAmountFormatted : ''}</div>
-      </div>
-
-      <!-- Virtual address -->
-      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">Your Mailbox Address</div>
-      <div id="copy-addr-box-${safeId}"
-        onclick="copyAddress('${safeId}')"
-        style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:16px;cursor:pointer;transition:border-color .15s,background .15s"
-        onmouseover="this.style.borderColor='var(--blue);this.style.background='#EEF4FC'" 
-        onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--bg)'">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div id="copy-addr-text-${safeId}" style="font-size:13px;color:var(--ink);font-weight:500;line-height:1.5">${officeAddr}</div>
-          <div id="copy-addr-icon-${safeId}" style="font-size:11px;color:var(--ink-4);margin-left:10px;white-space:nowrap;flex-shrink:0">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            Copy
+  // ── Plan header ──
+  const planHeaderHtml = `
+    <div class="card" style="padding:0;margin-bottom:16px;overflow:hidden">
+      <div style="background:linear-gradient(135deg,#1A1A1F 0%,#2d2d35 100%);padding:24px 24px 20px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="min-width:0">
+            <div id="fname-display-wrap-${safeId}" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <div id="fname-display-${safeId}" style="font-family:'DM Serif Display',serif;font-size:22px;color:#fff;letter-spacing:-0.3px;line-height:1.2">${planName}</div>
+              <button onclick="openFriendlyNameEdit('${pc ? pc.planCardId : ''}','${safeId}')"
+                title="Edit nickname"
+                style="background:rgba(255,255,255,0.1);border:none;cursor:pointer;padding:4px 6px;border-radius:5px;color:rgba(255,255,255,0.5);transition:all .15s;flex-shrink:0"
+                onmouseover="this.style.background='rgba(255,255,255,0.2)';this.style.color='#fff'" onmouseout="this.style.background='rgba(255,255,255,0.1)';this.style.color='rgba(255,255,255,0.5)'">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+            </div>
+            <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:6px">
+              <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp"
+                style="font-size:13px;padding:5px 10px;border:1px solid rgba(255,255,255,0.2);border-radius:var(--radius-sm);font-family:inherit;width:180px;background:rgba(255,255,255,0.1);color:#fff"
+                onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
+              <button id="fname-save-${safeId}" onclick="saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}')"
+                style="font-size:11px;padding:5px 12px;background:#fff;color:var(--ink);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;font-weight:600">Save</button>
+              <button onclick="closeFriendlyNameEdit('${safeId}')"
+                style="font-size:11px;padding:5px 8px;background:rgba(255,255,255,0.1);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;color:rgba(255,255,255,0.6)">✕</button>
+            </div>
+            ${friendlyPlanName ? `<div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:4px">${officialPlanName}</div>` : ''}
+            <div style="font-size:12px;color:rgba(255,255,255,0.5)">${billing}${sub.planAmountFormatted ? ' · ' + sub.planAmountFormatted : ''}${pc && pc.currentPeriodEnd ? ' · ends ' + new Date(pc.currentPeriodEnd).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
           </div>
+          <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;background:rgba(26,107,60,0.35);color:#6ee08a;border:1px solid rgba(110,224,138,0.25);white-space:nowrap;flex-shrink:0;margin-top:2px">${pc && pc.status === 'active' ? '● Active' : pc ? pc.status : 'Active'}</span>
         </div>
       </div>
+      <!-- Address bar -->
+      <div id="copy-addr-box-${safeId}" onclick="copyAddress('${safeId}')"
+        style="padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .12s;background:var(--white)"
+        onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='var(--white)'">
+        <div style="min-width:0">
+          <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px">Your Mailbox Address</div>
+          <div id="copy-addr-text-${safeId}" style="font-size:13px;color:var(--ink);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${officeAddr}</div>
+        </div>
+        <div id="copy-addr-icon-${safeId}" style="margin-left:16px;flex-shrink:0;color:var(--ink-4);display:flex;align-items:center;gap:4px;font-size:11px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy
+        </div>
+      </div>
+    </div>`;
 
-      <!-- Usage bars -->
-      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">Usage This Period</div>
+  // ── Usage stats ──
+  const statsHtml = (mailLimit > 0 || parcelLimit > 0) ? `
+    <div class="stats-row" style="margin-bottom:16px">
       ${mailLimit > 0 ? `
-      <div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-          <span style="color:var(--ink-3)">Mail</span>
-          <span style="color:var(--ink);font-weight:500">${mailsUsed} / ${mailLimit}</span>
-        </div>
-        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${mailPct}%;background:${bar(mailPct)==='safe'?'var(--green)':bar(mailPct)==='warn'?'var(--amber)':'var(--red)'};border-radius:3px;transition:width .3s"></div>
-        </div>
+      <div class="stat-card ${barClass(mailPct) === 'safe' ? 'green' : barClass(mailPct) === 'warn' ? 'amber' : 'accent'}">
+        <div class="stat-label">Mail Used</div>
+        <div class="stat-value">${mailsUsed}</div>
+        <div class="stat-sub">of <strong>${mailLimit}</strong> included</div>
+        <div class="usage-bar"><div class="usage-bar-fill ${barClass(mailPct)}" style="width:${mailPct}%"></div></div>
       </div>` : ''}
       ${parcelLimit > 0 ? `
-      <div style="margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-          <span style="color:var(--ink-3)">Parcels</span>
-          <span style="color:var(--ink);font-weight:500">${parcelsUsed} / ${parcelLimit}</span>
-        </div>
-        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${parcelPct}%;background:${bar(parcelPct)==='safe'?'var(--green)':bar(parcelPct)==='warn'?'var(--amber)':'var(--red)'};border-radius:3px;transition:width .3s"></div>
-        </div>
+      <div class="stat-card ${barClass(parcelPct) === 'safe' ? 'green' : barClass(parcelPct) === 'warn' ? 'amber' : 'accent'}">
+        <div class="stat-label">Parcels Used</div>
+        <div class="stat-value">${parcelsUsed}</div>
+        <div class="stat-sub">of <strong>${parcelLimit}</strong> included</div>
+        <div class="usage-bar"><div class="usage-bar-fill ${barClass(parcelPct)}" style="width:${parcelPct}%"></div></div>
       </div>` : ''}
-
-      ${hasFwd && fwdAddr ? `
-      <div style="margin-bottom:16px;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);border:1px solid var(--border)">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:4px">📬 Forwarding Address</div>
-        <div style="font-size:12px;color:var(--ink-3)">${fwdAddr}</div>
-      </div>` : ''}
-
-      <!-- Recipients -->
-      <div class="form-divider" style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-4);font-weight:600;margin-bottom:10px">
-        Recipients <span style="font-weight:400;text-transform:none;font-size:11px">(${activeR}${pendingR > 0 ? '+'+pendingR+' pending' : ''} / ${maxR})</span>
+      <div class="stat-card blue">
+        <div class="stat-label">Recipients</div>
+        <div class="stat-value">${activeR}</div>
+        <div class="stat-sub">of <strong>${maxR}</strong> slots${pendingR > 0 ? ' · ' + pendingR + ' pending' : ''}</div>
       </div>
-      <div id="rec-list-${safeId}">
-        ${[..._regRecs, ..._tempRecs].map(_renderClientRec).join('')}
+    </div>` : `
+    <div class="stats-row" style="margin-bottom:16px">
+      <div class="stat-card blue">
+        <div class="stat-label">Recipients</div>
+        <div class="stat-value">${activeR}</div>
+        <div class="stat-sub">of <strong>${maxR}</strong> slots${pendingR > 0 ? ' · ' + pendingR + ' pending' : ''}</div>
       </div>
-      ${addRecipientForm}
     </div>`;
+
+  // ── Forwarding ──
+  const fwdHtml = hasFwd && fwdAddr ? `
+    <div class="card" style="padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">📬 Forwarding Address</div>
+      <div style="font-size:13px;color:var(--ink-2)">${fwdAddr}</div>
+    </div>` : '';
+
+  // ── Recipient rows ──
+  const recItemsHtml = allRecs.length > 0 ? allRecs.map(r => {
+    const isTemp   = r.notes && r.notes.startsWith('TEMP:');
+    const initials = (r.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    const typeLabel = r.type === 'company' ? 'Company' : 'Individual';
+    const langLabel = r.language === 'fr' ? 'FR' : 'EN';
+    return `
+      <div class="recipient-item">
+        <div class="recipient-avatar">${initials}</div>
+        <div class="recipient-info">
+          <div class="recipient-name">${r.name || '—'}</div>
+          <div class="recipient-company">${typeLabel} · ${langLabel}</div>
+        </div>
+        <div class="recipient-status">
+          ${r.status === 'active'
+            ? '<span class="pill scanned">Active</span>'
+            : isTemp
+              ? '<span class="pill stored">Pending</span>'
+              : '<span class="pill stored">Inactive</span>'}
+        </div>
+      </div>`;
+  }).join('') : `
+    <div style="padding:24px 0;text-align:center;color:var(--ink-4)">
+      <div style="font-size:22px;margin-bottom:6px">👤</div>
+      <div style="font-size:13px">No recipients yet</div>
+    </div>`;
+
+  // ── Add recipient form — matches onboarding style ──
+  const addRecipientForm = canAddR ? `
+    <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">Add Recipient</div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Full Name <span style="color:var(--red)">*</span></label>
+          <input type="text" id="ar-name-${safeId}" placeholder="e.g. Jane Smith" required
+            oninput="arCheckName('${safeId}')">
+          <div id="ar-name-hint-${safeId}" style="font-size:11px;color:var(--ink-4);margin-top:3px;display:none">Please enter both first and last name.</div>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Type</label>
+          <select id="ar-type-${safeId}" onchange="arUpdateLabel('${safeId}')">
+            <option value="individual">Individual</option>
+            <option value="company">Company / Business</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Language</label>
+        <select id="ar-lang-${safeId}" style="width:50%">
+          <option value="en">English</option>
+          <option value="fr">French</option>
+        </select>
+      </div>
+      <button type="button" id="ar-btn-${safeId}"
+        onclick="submitAddRecipient(event,'${sub.subscriptionId}','${safeId}')"
+        class="btn btn-primary" style="width:100%">
+        + Add Recipient
+      </button>
+    </div>` : `
+    <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:14px;text-align:center;font-size:12px;color:var(--ink-4)">
+      Recipient limit reached (${maxR} / ${maxR})
+    </div>`;
+
+  const recsHtml = `
+    <div style="margin-bottom:16px">
+      <div class="section-header">
+        <span class="section-title">Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">${activeR} / ${maxR}</span></span>
+      </div>
+      <div class="card" style="padding:8px 16px 4px">
+        <div class="recipient-list">${recItemsHtml}</div>
+        ${addRecipientForm}
+        <div style="padding-bottom:12px"></div>
+      </div>
+    </div>`;
+
+  const planHtml = planHeaderHtml + statsHtml + fwdHtml + recsHtml;
 
   const plansArea = qs('plans-area');
   if (plansArea) {
-    const allSubs = STATE.allSubs || [sub];
-    const tabsHtml = allSubs.length > 1 ? `
-      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto">
-        ${allSubs.map(s => {
-          const isActive = s.subscriptionId === (sub.subscriptionId);
-          const label    = getPlanFriendlyName(s);
-          return `<button onclick="switchPlanTab('${s.subscriptionId}')"
-            style="padding:8px 16px;background:none;border:none;border-bottom:2px solid ${isActive?'var(--ink)':'transparent'};
-                   font-size:13px;font-weight:${isActive?'600':'400'};color:${isActive?'var(--ink)':'var(--ink-3)'};
-                   cursor:pointer;white-space:nowrap;font-family:inherit;transition:all .15s">${label}</button>`;
-        }).join('')}
-      </div>` : '';
-    plansArea.innerHTML = tabsHtml + `<div class="plan-card-grid">${planHtml}</div>`;
+    plansArea.innerHTML = planHtml;
     attachPlanCardListeners(sub, pc);
   }
 
   return planHtml;
 }
+
 
 function attachPlanCardListeners(sub, pc) {
   // Add recipient form submission
@@ -1970,17 +2115,28 @@ function attachPlanCardListeners(sub, pc) {
 }
 
 async function submitAddRecipient(e, subscriptionId, safeId) {
-  e.preventDefault();
+  e.preventDefault ? e.preventDefault() : null;
   const nameEl = document.getElementById('ar-name-' + safeId);
-  const compEl = document.getElementById('ar-company-' + safeId);
+  const typeEl = document.getElementById('ar-type-' + safeId);
+  const langEl = document.getElementById('ar-lang-' + safeId);
   const btnEl  = document.getElementById('ar-btn-' + safeId);
   const name   = nameEl ? nameEl.value.trim() : '';
-  if (!name) return;
+  const type   = typeEl ? typeEl.value : 'individual';
+  const lang   = langEl ? langEl.value : 'en';
+
+  if (!name) { toast('Please enter a name.', 'error'); return; }
+
+  // Validate full name for individuals
+  if (type === 'individual' && name.split(/\s+/).filter(Boolean).length < 2) {
+    toast('Please enter both first and last name.', 'error');
+    if (nameEl) nameEl.focus();
+    return;
+  }
 
   const pc = STATE.allPlanCards && STATE.allPlanCards[subscriptionId];
   const planCardId = pc ? pc.planCardId : (STATE.planCard ? STATE.planCard.planCardId : '');
 
-  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Adding...'; }
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<span class="btn-spinner"></span> Adding...'; }
 
   try {
     const result = await apiPost({
@@ -1988,15 +2144,13 @@ async function submitAddRecipient(e, subscriptionId, safeId) {
       uuid:            STATE.uuid,
       planCardId:      planCardId,
       name:            name,
-      companyName:     compEl ? compEl.value.trim() : '',
-      type:            'individual',
-      language:        'en',
+      type:            type,
+      language:        lang,
       notifyOnArrival: true
     });
     if (result.status !== 'ok') throw new Error(result.message || 'Failed');
     toast('Recipient added!', 'success');
     if (nameEl) nameEl.value = '';
-    if (compEl) compEl.value = '';
     // Refresh recipients
     const rRes = await apiPost({ action:'getRecipients', uuid:STATE.uuid, subscriptionId });
     if (rRes.status === 'ok') {
@@ -2006,8 +2160,22 @@ async function submitAddRecipient(e, subscriptionId, safeId) {
     }
   } catch(err) {
     toast(err.message, 'error');
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = '+ Add Recipient'; }
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '+ Add Recipient'; }
   }
+}
+
+function arCheckName(safeId) {
+  const nameEl = document.getElementById('ar-name-' + safeId);
+  const typeEl = document.getElementById('ar-type-' + safeId);
+  const hintEl = document.getElementById('ar-name-hint-' + safeId);
+  if (!nameEl || !hintEl) return;
+  const isInd = !typeEl || typeEl.value === 'individual';
+  const val   = nameEl.value.trim();
+  hintEl.style.display = (isInd && val.length > 0 && val.split(/\s+/).filter(Boolean).length < 2) ? 'block' : 'none';
+}
+
+function arUpdateLabel(safeId) {
+  arCheckName(safeId);
 }
 
 function copyAddress(safeId) {
@@ -2032,22 +2200,21 @@ function buildMailLog(sub, access, mailLog, pc, agents, recipients) {
 
   const autoFeature  = pc ? (pc.autoFeature || 'none').toLowerCase() : 'none';
   const isScanPlan   = autoFeature === 'scan';
-  const isShipPlan   = autoFeature === 'ship';
   const canRelease   = sub.accessStatus === 'ACTIVE';
-  const activeAgents = (agents || []).filter(a => a.status === 'active');
-  const activeRecs   = (recipients || []).filter(r => r.status === 'active');
+  const blurred      = !canRelease;
 
   if (!mailLog || mailLog.length === 0) {
     area.innerHTML = `
-      <div style="text-align:center;padding:60px 20px;color:var(--ink-4)">
-        <div style="font-size:36px;margin-bottom:12px">📭</div>
-        <div style="font-size:14px;font-weight:500;color:var(--ink-3)">No mail yet</div>
-        <div style="font-size:12px;margin-top:4px">Your mail will appear here once it arrives.</div>
+      <div class="card">
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <div class="empty-title">No mail yet</div>
+          <div class="empty-sub">Your mail will appear here once it arrives.</div>
+        </div>
       </div>`;
     return;
   }
 
-  // Sort by due date ascending (soonest first)
   const sorted = [...mailLog].sort((a, b) => {
     const da = a.storageDueDate ? new Date(a.storageDueDate) : new Date('9999');
     const db = b.storageDueDate ? new Date(b.storageDueDate) : new Date('9999');
@@ -2055,53 +2222,38 @@ function buildMailLog(sub, access, mailLog, pc, agents, recipients) {
   });
 
   const statusLabel = {
-    arrived:       'Arrived',
-    scanned:       'Scanned',
-    stored:        'Stored',
-    forwarded:     'Forwarded',
-    picked_up:     'Picked Up',
-    shredded:      'Shredded',
-    ready_to_ship: 'Ready to Ship',
+    arrived: 'Arrived', scanned: 'Scanned', stored: 'Stored',
+    forwarded: 'Forwarded', picked_up: 'Picked Up',
+    shredded: 'Shredded', ready_to_ship: 'Ready to Ship',
   };
 
-  const blurred = !canRelease;
-
   const rows = sorted.map(m => {
-    const isParcel  = m.type === 'parcel';
-    const isDone    = ['picked_up','shredded','forwarded'].includes(m.status);
+    const isParcel = m.type === 'parcel';
+    const isDone   = ['picked_up','shredded','forwarded'].includes(m.status);
+    const dueDate  = m.storageDueDate ? new Date(m.storageDueDate) : null;
+    const daysLeft = dueDate ? Math.ceil((dueDate - Date.now()) / 86400000) : null;
+    const urgent   = daysLeft !== null && daysLeft <= 3 && !isDone;
     const isBlurred = blurred && !isDone;
-    const dueDate   = m.storageDueDate ? new Date(m.storageDueDate) : null;
-    const daysLeft  = dueDate ? Math.ceil((dueDate - Date.now()) / 86400000) : null;
-    const urgent    = daysLeft !== null && daysLeft <= 3 && !isDone;
 
     const dueBadge = dueDate && !isDone ? `
-      <div style="font-size:10px;color:${urgent?'var(--red)':'var(--ink-4)'};margin-top:2px">
-        ${urgent ? '⚠️ ' : ''}Due ${dueDate.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}${daysLeft !== null ? ' · ' + (daysLeft < 0 ? 'Overdue' : daysLeft + 'd left') : ''}
+      <div class="storage-warn ${urgent ? 'urgent' : ''}">
+        ${urgent ? '⚠ ' : ''}Due ${dueDate.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}${daysLeft !== null ? ' · ' + (daysLeft < 0 ? 'Overdue' : daysLeft + 'd') : ''}
       </div>` : '';
 
-    const scanImg = isScanPlan && m.scanImageUrl ? `
-      <div style="margin-top:8px">
-        <a href="${m.scanImageUrl}" target="_blank" style="font-size:11px;color:var(--blue);text-decoration:none">📄 View Scan</a>
-      </div>` : '';
-
-    const contentBlur = isBlurred ? 'filter:blur(4px);user-select:none;pointer-events:none' : '';
+    const scanLink = isScanPlan && m.scanImageUrl
+      ? `<a href="${m.scanImageUrl}" target="_blank" style="font-size:11px;color:var(--blue)">📄 View scan</a>` : '';
 
     return `
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border);${isDone?'opacity:0.6':''}">
-        <div style="display:flex;align-items:flex-start;gap:12px">
-          <div style="font-size:20px;flex-shrink:0;margin-top:2px">${isParcel?'📦':'✉️'}</div>
-          <div style="flex:1;min-width:0;${contentBlur}">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <span style="font-size:13px;font-weight:500;color:var(--ink)">${m.recipientName || '—'}</span>
-              <span class="pill ${m.status || 'arrived'}">${statusLabel[m.status] || m.status || 'Arrived'}</span>
-              ${m.isConfidential ? `<span class="pill confidential">Confidential</span>` : ''}
-            </div>
-            <div style="font-size:11px;color:var(--ink-4);margin-top:2px">
-              ${m.mailId || ''} · ${m.arrivedAt ? new Date(m.arrivedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}) : '—'}
-            </div>
-            ${dueBadge}
-            ${scanImg}
-          </div>
+      <div class="mail-item ${isDone ? 'mail-item-done' : ''} ${isBlurred ? 'blurred' : ''}">
+        <div class="mail-icon ${isParcel ? 'parcel' : 'letter'}">${isParcel ? '📦' : '✉️'}</div>
+        <div class="mail-info">
+          <div class="mail-recipient">${m.recipientName || '—'}</div>
+          <div class="mail-date">${m.mailId || ''}${m.arrivedAt ? ' · ' + new Date(m.arrivedAt).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
+          ${dueBadge}${scanLink}
+        </div>
+        <div class="mail-meta">
+          <span class="pill ${m.status || 'arrived'}">${statusLabel[m.status] || m.status || 'Arrived'}</span>
+          ${m.isConfidential ? '<span class="pill confidential">Confidential</span>' : ''}
         </div>
       </div>`;
   }).join('');
@@ -2109,13 +2261,14 @@ function buildMailLog(sub, access, mailLog, pc, agents, recipients) {
   const refreshBtn = `
     <div style="display:flex;align-items:center;justify-content:flex-end;padding:8px 16px;border-bottom:1px solid var(--border)">
       <button onclick="_doRefreshMailLog(STATE.activeSub)"
-        style="font-size:11px;color:var(--ink-4);background:none;border:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px">
+        style="font-size:11px;color:var(--ink-4);background:none;border:none;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px;transition:color .15s"
+        onmouseover="this.style.color='var(--ink-3)'" onmouseout="this.style.color='var(--ink-4)'">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Refresh
       </button>
     </div>`;
 
-  area.innerHTML = `<div class="card" style="overflow:hidden">${refreshBtn}${rows}</div>`;
+  area.innerHTML = `<div class="mail-list">${refreshBtn}${rows}</div>`;
 }
 
 // ── Friendly name edit ────────────────────────────────────
