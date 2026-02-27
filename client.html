@@ -8,7 +8,11 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
 <style>
   /* ── Variables ─────────────────────────────────────── */
+  /* ── THEME CONFIG (changeable from staff panel later) ─── */
   :root {
+    --theme:       #8B1A1A;   /* primary brand colour */
+    --logo-url:    url('https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-scaled.png');
+
     --red:        #8B1A1A;
     --red-light:  #A52020;
     --red-dim:    rgba(139,26,26,0.08);
@@ -466,7 +470,7 @@
   .tabs-bar-wrap {
     background: var(--white);
     border-bottom: 1px solid var(--border);
-    padding: 8px 20px;
+    padding: 7px 20px;
     position: sticky; top: 56px; z-index: 90;
     display: flex; align-items: center; justify-content: space-between;
   }
@@ -495,6 +499,23 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
   }
   .tab:hover:not(.active) { color: var(--ink-2); background: rgba(255,255,255,0.5); }
+
+  /* Refresh button */
+  .refresh-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px;
+    font-size: 11px; font-weight: 500; color: var(--ink-3);
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer;
+    font-family: inherit; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .refresh-btn:hover { background: var(--bg); color: var(--ink); border-color: var(--ink-3); }
+  .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .refresh-btn svg { transition: transform 0.15s; flex-shrink: 0; }
+  .refresh-btn.spinning svg { animation: refreshSpin 0.7s linear infinite; }
+  @keyframes refreshSpin { to { transform: rotate(360deg); } }
+  .refresh-ts { font-size: 11px; color: var(--ink-4); }
 
   /* ── Toast ──────────────────────────────────────────── */
   .toast-container {
@@ -534,10 +555,10 @@
   }
   .sub-pill:hover { color: var(--ink); border-color: var(--ink-3); background: var(--bg); }
   .sub-pill.active {
-    background: var(--ink); color: var(--white);
-    border-color: var(--ink); font-weight: 600;
+    background: var(--red); color: var(--white);
+    border-color: var(--red); font-weight: 600;
   }
-  .sub-pill.active:hover { background: var(--ink-2); border-color: var(--ink-2); }
+  .sub-pill.active:hover { background: var(--red-light); border-color: var(--red-light); }
   .sub-pill.blocked { color: var(--red); border-color: var(--red-border); }
   .sub-pill.active.blocked { background: var(--red); border-color: var(--red); color: var(--white); }
   /* ── Plan card grid ─────────────────────────────────── */
@@ -595,7 +616,12 @@
 
 <!-- Loading -->
 <div id="loading-screen">
-  <div class="loading-logo">YYZ<span class="dot">.</span>Offices</div>
+  <div class="loading-logo">
+    <img src="https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-1-scaled.png"
+      alt="YYZ Offices" style="height:52px;width:auto;display:block;margin:0 auto"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+    <span style="display:none">YYZ<span class="dot">.</span>Offices</span>
+  </div>
   <div class="loading-bar"><div class="loading-bar-fill"></div></div>
 </div>
 
@@ -604,7 +630,12 @@
 
   <!-- Header -->
   <header class="header">
-    <div class="header-logo">YYZ<span class="dot">.</span>Offices</div>
+    <div class="header-logo">
+        <img src="https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-scaled.png"
+          alt="YYZ Offices" style="height:30px;width:auto;display:block"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
+        <span style="display:none">YYZ<span class="dot">.</span>Offices</span>
+      </div>
     <div class="header-right">
       <span class="client-name" id="header-name"></span>
     </div>
@@ -982,9 +1013,7 @@ function renderPlanSelection(access) {
   if (pending.length === 0) { renderDashboard(subs[0], access); return; }
   if (pending.length === 1) { loadAndRenderSub(pending[0], access); return; }
 
-  // Hide subscription switcher tabs — irrelevant during plan selection
   const switcher = qs('sub-switcher-area');
-  if (switcher) switcher.style.display = 'none';
 
   const planIcons = { ship: '📬', scan: '🔍', none: '📦' };
 
@@ -1025,9 +1054,7 @@ function startPlanSetup(subscriptionId) {
   const sub = (STATE.allSubs || []).find(s => s.subscriptionId === subscriptionId);
   if (!sub) return;
   STATE.activeSub = sub;
-  // Restore switcher now that a plan is selected
   const switcher = qs('sub-switcher-area');
-  if (switcher) switcher.style.display = '';
   renderSetup(sub, STATE.access);
 }
 
@@ -1035,23 +1062,25 @@ function startPlanSetup(subscriptionId) {
 async function renderSetup(sub, access) {
   const step = sub.setupStep;
 
-  // Hide subscription switcher tabs during entire onboarding flow
   const switcher = qs('sub-switcher-area');
-  if (switcher) switcher.style.display = 'none';
 
   const stepIndex = { plan_setup: 0, add_recipients: 1, pending_activation: 2 };
   const currentStep = stepIndex[step] ?? 0;
 
-  // Show back button only when client has multiple plans (so they can switch)
-  const hasMultiplePlans = (STATE.allSubs || []).filter(s => s.canAccess).length > 1;
-  const backBtn = hasMultiplePlans ? `
+
+  // Back-to-plans only when 2+ plans are BOTH pending setup (plan_setup step)
+  const pendingSetupCount = (STATE.allSubs || []).filter(s =>
+    s.canAccess && s.setupRequired && s.setupStep === 'plan_setup'
+  ).length;
+  const backBtn = pendingSetupCount >= 2 ? `
     <button onclick="goBackToPlanSelection()"
       style="display:inline-flex;align-items:center;gap:5px;background:none;border:none;
              cursor:pointer;font-size:12px;color:var(--ink-4);font-family:inherit;
-             padding:0;margin-bottom:20px;transition:color 0.15s"
+             padding:0;margin-bottom:12px;transition:color 0.15s"
       onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--ink-4)'">
       ← Back to plans
     </button>` : '';
+  const returnBtn = '';
 
   const stepsHtml = [0,1,2].map((i, idx) => `
     <div class="step-dot ${i < currentStep ? 'done' : i === currentStep ? 'active' : ''}"></div>
@@ -1069,9 +1098,7 @@ async function renderSetup(sub, access) {
 }
 
 function goBackToPlanSelection() {
-  // Restore switcher and go back to selection screen
-  const switcher = qs('sub-switcher-area');
-  if (switcher) switcher.style.display = 'none'; // stays hidden on selection screen
+
   renderPlanSelection(STATE.access);
 }
 
@@ -1788,9 +1815,7 @@ function renderOnboardingSuccess(planCardId) {
       </div>
     </div>`;
 
-  // Restore subscription switcher
-  const switcher = qs('sub-switcher-area');
-  if (switcher) switcher.style.display = '';
+
 }
 
 
@@ -1808,16 +1833,38 @@ function skeletonCard(lines = 2) {
 
 // ── Dashboard ─────────────────────────────────────────────
 async function renderDashboard(sub, access) {
+  // Guard: prevent concurrent double-calls (e.g. from switcher re-render race)
+  if (renderDashboard._running) return;
+  renderDashboard._running = true;
+  try { await _renderDashboardInner(sub, access); } finally { renderDashboard._running = false; }
+}
+async function _renderDashboardInner(sub, access) {
   // Render shell + skeleton instantly
   qs('content-area').innerHTML = `
     <div id="tabs-bar" class="tabs-bar-wrap">
       <div class="tabs">
-        <button class="tab active" id="tab-mail"   onclick="switchTab('mail')">Mail</button>
-        <button class="tab"        id="tab-plans"  onclick="switchTab('plans')">My Plan</button>
+        <button class="tab active" id="tab-mail"  onclick="switchTab('mail')">Mail</button>
+        <button class="tab"        id="tab-plans" onclick="switchTab('plans')">My Plan</button>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <div id="mail-refresh-ts"  style="font-size:11px;color:var(--ink-4);display:none"></div>
-        <div id="plans-refresh-ts" style="font-size:11px;color:var(--ink-4);display:none"></div>
+        <span class="refresh-ts" id="mail-refresh-ts"  style="display:none"></span>
+        <span class="refresh-ts" id="plans-refresh-ts" style="display:none"></span>
+        <button class="refresh-btn" id="refresh-mail-btn"
+          onclick="clientRefresh('mail')" style="display:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Refresh
+        </button>
+        <button class="refresh-btn" id="refresh-plans-btn"
+          onclick="clientRefresh('plans')" style="display:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Refresh
+        </button>
       </div>
     </div>
     <div id="tab-mail-content" class="main">
@@ -1826,6 +1873,8 @@ async function renderDashboard(sub, access) {
     <div id="tab-plans-content" class="main" style="display:none">
       <div id="plans-area">${skeletonCard(2)}</div>
     </div>`;
+
+  _restoreRefreshTs(); // restore timestamps after shell rebuild
 
   // Load data in parallel
   const [mailRes, planRes, agentsRes, recsRes] = await Promise.allSettled([
@@ -1845,19 +1894,26 @@ async function renderDashboard(sub, access) {
   STATE.agents     = agents;
   STATE.recipients = recipients;
   if (!STATE.allPlanCards) STATE.allPlanCards = {};
-  if (planCard) STATE.allPlanCards[sub.subscriptionId] = planCard;
+  if (planCard) {
+    STATE.allPlanCards[sub.subscriptionId] = planCard;
+    renderSubscriptionSwitcher(STATE.access); // re-render now that friendlyName is loaded
+  }
 
   const now = new Date().toLocaleTimeString('en-CA', { hour:'2-digit', minute:'2-digit' });
-  const mailTs  = qs('mail-refresh-ts');
-  const planTs  = qs('plans-refresh-ts');
-  if (mailTs)  { mailTs.textContent  = 'Updated ' + now; mailTs.style.display  = ''; }
-  if (planTs)  { planTs.textContent  = 'Updated ' + now; planTs.style.display  = ''; }
+  _setRefreshTs('mail-refresh-ts', now);
+  _setRefreshTs('plans-refresh-ts', now);
+  // Show correct refresh button for active tab
+  const _rbMail  = qs('refresh-mail-btn');
+  const _rbPlan  = qs('refresh-plans-btn');
+  if (_rbMail)  _rbMail.style.display  = _activeTab === 'mail'  ? '' : 'none';
+  if (_rbPlan)  _rbPlan.style.display  = _activeTab === 'plans' ? '' : 'none';
 
   buildMailLog(sub, access, mailLog, planCard, agents, recipients);
   buildPlanCard(sub, access, planCard, recipients);
 }
 
 let _activeTab = 'mail';
+const _tsStore = { mail: '', plans: '' };
 function switchTab(tab) {
   _activeTab = tab;
   const mailC  = qs('tab-mail-content');
@@ -1866,15 +1922,73 @@ function switchTab(tab) {
   const tabP   = qs('tab-plans');
   const mailTs  = qs('mail-refresh-ts');
   const planTs  = qs('plans-refresh-ts');
+  const mailBtn  = qs('refresh-mail-btn');
+  const plansBtn = qs('refresh-plans-btn');
   if (mailC)  mailC.style.display  = tab === 'mail'  ? '' : 'none';
   if (plansC) plansC.style.display = tab === 'plans' ? '' : 'none';
-  if (tabM)  { tabM.classList.toggle('active',  tab === 'mail');  }
-  if (tabP)  { tabP.classList.toggle('active',  tab === 'plans'); }
-  if (mailTs)  mailTs.style.display  = tab === 'mail'  ? '' : 'none';
-  if (planTs)  planTs.style.display  = tab === 'plans' ? '' : 'none';
+  if (tabM)  tabM.classList.toggle('active',  tab === 'mail');
+  if (tabP)  tabP.classList.toggle('active',  tab === 'plans');
+  if (mailTs)  mailTs.style.display  = (tab === 'mail'  && _tsStore.mail)  ? '' : 'none';
+  if (planTs)  planTs.style.display  = (tab === 'plans' && _tsStore.plans) ? '' : 'none';
+  if (mailBtn)  mailBtn.style.display  = tab === 'mail'  ? '' : 'none';
+  if (plansBtn) plansBtn.style.display = tab === 'plans' ? '' : 'none';
 }
 
 // ── Refresh helpers ───────────────────────────────────────
+function _setRefreshBtn(btnId, spinning) {
+  const btn = qs(btnId);
+  if (!btn) return;
+  btn.disabled = spinning;
+  btn.classList.toggle('spinning', spinning);
+  btn.querySelector('svg') && null; // trigger reflow handled by CSS
+}
+
+function _setRefreshTs(tsId, text) {
+  const key = tsId === 'mail-refresh-ts' ? 'mail' : 'plans';
+  _tsStore[key] = text || '';
+  const el = qs(tsId);
+  if (!el) return;
+  el.textContent = text ? 'Updated ' + text : '';
+  // Only show if this tab is currently active
+  const activeKey = _activeTab === 'mail' ? 'mail-refresh-ts' : 'plans-refresh-ts';
+  el.style.display = (text && tsId === activeKey) ? '' : 'none';
+}
+
+function _restoreRefreshTs() {
+  const mailEl  = qs('mail-refresh-ts');
+  const plansEl = qs('plans-refresh-ts');
+  if (mailEl)  { mailEl.textContent  = _tsStore.mail  ? 'Updated ' + _tsStore.mail  : ''; mailEl.style.display  = (_tsStore.mail  && _activeTab === 'mail')  ? '' : 'none'; }
+  if (plansEl) { plansEl.textContent = _tsStore.plans ? 'Updated ' + _tsStore.plans : ''; plansEl.style.display = (_tsStore.plans && _activeTab === 'plans') ? '' : 'none'; }
+}
+
+async function clientRefresh(tab) {
+  const sub = STATE.activeSub;
+  if (!sub) return;
+  if (tab === 'mail') {
+    _setRefreshBtn('refresh-mail-btn', true);
+    await _doRefreshMailLog(sub);
+    _setRefreshBtn('refresh-mail-btn', false);
+  } else {
+    _setRefreshBtn('refresh-plans-btn', true);
+    // Re-fetch planCard + recipients
+    try {
+      const [pcRes, recRes] = await Promise.all([
+        apiPost({ action:'getPlanCard', uuid:STATE.uuid, subscriptionId:sub.subscriptionId }),
+        apiPost({ action:'getRecipients', uuid:STATE.uuid, subscriptionId:sub.subscriptionId })
+      ]);
+      if (pcRes.planCard) {
+        STATE.planCard = pcRes.planCard;
+        STATE.allPlanCards[sub.subscriptionId] = pcRes.planCard;
+        renderSubscriptionSwitcher(STATE.access);
+      }
+      if (recRes.recipients) STATE.recipients = recRes.recipients;
+      buildPlanCard(sub, STATE.access, STATE.planCard, STATE.recipients);
+      _setRefreshTs('plans-refresh-ts', new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'}));
+    } catch(e) { toast('Failed to refresh plan', 'error'); }
+    _setRefreshBtn('refresh-plans-btn', false);
+  }
+}
+
 async function _doRefreshMailLog(sub) {
   const area = qs('mail-log-area');
   if (area) area.innerHTML = skeletonCard(3);
@@ -1883,8 +1997,7 @@ async function _doRefreshMailLog(sub) {
     if (r.status === 'ok') {
       STATE.mailLog = r.mailLog || [];
       buildMailLog(sub, STATE.access, STATE.mailLog, STATE.planCard, STATE.agents, STATE.recipients);
-      const ts = qs('mail-refresh-ts');
-      if (ts) ts.textContent = 'Updated ' + new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'});
+      _setRefreshTs('mail-refresh-ts', new Date().toLocaleTimeString('en-CA',{hour:'2-digit',minute:'2-digit'}));
     }
   } catch(e) { toast('Failed to refresh mail log', 'error'); }
 }
@@ -1925,10 +2038,10 @@ function buildPlanCard(sub, access, pc, recipients) {
   const hasFwd  = pc && pc.autoFeature === 'ship';
   const fwdAddr = pc ? [pc.forwardingAddress, pc.forwardingCity, pc.forwardingProvince, pc.forwardingPostalCode, pc.forwardingCountry].filter(Boolean).join(', ') : '';
 
-  // Recipients
+  // Recipients — temps don't count toward slot allotment
   const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
-  const activeR  = recipients.filter(r => r.status === 'active').length;
-  const pendingR = recipients.filter(r => r.status !== 'active').length;
+  const activeR  = recipients.filter(r => r.status === 'active' && !(r.notes && r.notes.startsWith('TEMP:'))).length;
+  const pendingR = recipients.filter(r => r.status !== 'active' && !(r.notes && r.notes.startsWith('TEMP:'))).length;
   const canAddR  = activeR < maxR;
 
   const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
@@ -1938,7 +2051,7 @@ function buildPlanCard(sub, access, pc, recipients) {
   // ── Plan header ──
   const planHeaderHtml = `
     <div class="card" style="padding:0;margin-bottom:16px;overflow:hidden">
-      <div style="background:linear-gradient(135deg,#1A1A1F 0%,#2d2d35 100%);padding:24px 24px 20px">
+      <div style="background:linear-gradient(135deg,#6B1414 0%,#8B1A1A 100%);padding:24px 24px 20px">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
           <div style="min-width:0">
             <div id="fname-display-wrap-${safeId}" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -1952,7 +2065,7 @@ function buildPlanCard(sub, access, pc, recipients) {
             </div>
             <div id="fname-edit-${safeId}" style="display:none;align-items:center;gap:6px;margin-bottom:6px">
               <input id="fname-input-${safeId}" type="text" placeholder="e.g. Main Corp"
-                style="font-size:13px;padding:5px 10px;border:1px solid rgba(255,255,255,0.2);border-radius:var(--radius-sm);font-family:inherit;width:180px;background:rgba(255,255,255,0.1);color:#fff"
+                style="font-size:13px;padding:5px 10px;border:1px solid rgba(255,255,255,0.25);border-radius:var(--radius-sm);font-family:inherit;width:180px;background:rgba(0,0,0,0.15);color:#fff"
                 onkeydown="if(event.key==='Enter')saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}');if(event.key==='Escape')closeFriendlyNameEdit('${safeId}')">
               <button id="fname-save-${safeId}" onclick="saveFriendlyName('${pc ? pc.planCardId : ''}','${safeId}')"
                 style="font-size:11px;padding:5px 12px;background:#fff;color:var(--ink);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;font-weight:600">Save</button>
