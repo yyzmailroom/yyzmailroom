@@ -68,32 +68,36 @@
 
   /* ── App ────────────────────────────────────────────── */
   #app { display: none; flex-direction: column; height: 100vh; overflow: hidden; }
+  .workspace { flex: 1; overflow: hidden; }
   #app.visible { display: flex; animation: fadeIn 0.3s ease; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-  /* ── Header ─────────────────────────────────────────── */
-  .header {
+  /* ── Header (single unified bar) ────────────────────── */
+  .topbar {
     background: var(--white);
     border-bottom: 1px solid var(--border);
     padding: 0 20px;
-    height: 52px;
+    height: 54px;
     display: flex; align-items: center; justify-content: space-between;
-    flex-shrink: 0; z-index: 100;
+    flex-shrink: 0; z-index: 100; gap: 16px;
   }
-  .header-left { display: flex; align-items: center; gap: 16px; }
-  .header-logo { font-family: 'DM Serif Display', serif; font-size: 17px; color: var(--ink); }
-  .header-logo span { color: var(--red); }
+  .topbar-left { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+  .header-logo { display: flex; align-items: center; }
+  .header-divider {
+    width: 1px; height: 20px; background: var(--border); flex-shrink: 0;
+  }
   .staff-badge {
     background: var(--red-dim); color: var(--red);
-    font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
-    text-transform: uppercase; padding: 2px 8px; border-radius: 20px;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 3px 8px; border-radius: 20px;
+    flex-shrink: 0;
   }
-  .header-right { display: flex; align-items: center; gap: 12px; }
   .staff-name {
     font-size: 12px; color: var(--ink-3);
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
-  .staff-name strong { color: var(--ink); font-weight: 500; }
+  .staff-name strong { color: var(--ink); font-weight: 600; }
+  .staff-name .role-tag { font-size: 11px; color: var(--ink-4); }
   .staff-avatar {
     width: 28px; height: 28px; border-radius: 50%;
     background: var(--red-dim); color: var(--red);
@@ -102,25 +106,56 @@
     flex-shrink: 0;
   }
 
-  /* ── Main Nav ───────────────────────────────────────── */
+  /* ── Centre pill nav ─────────────────────────────────── */
   .main-nav {
-    display: flex; align-items: center; gap: 3px;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    gap: 2px;
+  }
+  .nav-group {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--bg-2);
+    border-radius: 8px;
+    padding: 3px;
   }
   .nav-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    padding: 6px 11px; border-radius: var(--radius-sm);
+    padding: 6px 12px;
     font-size: 12px; font-weight: 500; color: var(--ink-3);
     cursor: pointer; transition: all 0.15s;
-    background: transparent; border: none; white-space: nowrap;
-    font-family: inherit;
+    background: transparent; border: none; border-radius: 6px;
+    white-space: nowrap; font-family: inherit;
   }
-  .nav-btn:hover { background: var(--bg); color: var(--ink); }
+  .nav-btn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
   .nav-btn.active {
-    background: var(--red); color: var(--white);
+    background: var(--white); color: var(--ink); font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
   }
-  .nav-btn.active:hover { background: var(--red-light); }
-  .nav-btn svg { opacity: 0.7; flex-shrink: 0; }
-  .nav-btn.active svg { opacity: 1; }
+  .nav-btn svg { opacity: 0.45; flex-shrink: 0; transition: opacity 0.15s; }
+  .nav-btn:hover svg, .nav-btn.active svg { opacity: 0.9; }
+
+  /* Log Mail — prominent pill CTA, sits right of nav group */
+  .nav-log-cta {
+    background: var(--red); color: var(--white) !important;
+    border: none; border-radius: 7px;
+    padding: 7px 15px; font-weight: 600; font-size: 12px;
+    margin-left: 6px;
+    box-shadow: 0 1px 4px rgba(139,26,26,0.3), 0 0 0 0 rgba(139,26,26,0);
+    transition: all 0.15s; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 5px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .nav-log-cta:hover {
+    background: var(--red-light) !important;
+    box-shadow: 0 2px 10px rgba(139,26,26,0.4);
+    transform: translateY(-1px);
+  }
+  .nav-log-cta.active {
+    background: #6B1414 !important;
+    box-shadow: 0 1px 3px rgba(139,26,26,0.2);
+    transform: none;
+  }
+  .nav-log-cta svg { opacity: 1 !important; }
 
   /* ── Layout ─────────────────────────────────────────── */
   .workspace {
@@ -146,7 +181,7 @@
   .pane-full {
     flex: 1; overflow-y: auto;
     background: var(--bg);
-    padding: 20px;
+    padding: 24px 28px;
   }
 
   /* ── Pane Header ────────────────────────────────────── */
@@ -497,46 +532,54 @@
 </div>
 
 <div id="app">
-  <header class="header">
-    <div class="header-left">
+  <!-- Single unified header bar -->
+  <div class="topbar">
+    <!-- Left: logo + badge -->
+    <div class="topbar-left">
       <div class="header-logo">
         <img src="https://yyzoffices.com/wp-content/uploads/2026/02/logo-transparent-png-scaled.png"
-          alt="YYZ Offices" style="height:28px;width:auto;display:block"
+          alt="YYZ Offices" style="height:26px;width:auto;display:block"
           onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
         <span style="display:none">YYZ<span style="color:var(--red)">.</span>Offices</span>
       </div>
+      <div class="header-divider"></div>
       <div class="staff-badge">Staff</div>
     </div>
-    <div class="header-right">
-      <nav class="main-nav" id="view-toggle">
-        <button class="nav-btn active" onclick="setView('split')"      id="vbtn-split">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg>
+
+    <!-- Centre: pill nav group + Log Mail CTA -->
+    <nav class="main-nav" id="view-toggle">
+      <div class="nav-group">
+        <button class="nav-btn" onclick="setView('split')" id="vbtn-split">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg>
           Split
         </button>
-        <button class="nav-btn" onclick="setView('tasks')"      id="vbtn-tasks">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <button class="nav-btn" onclick="setView('tasks')" id="vbtn-tasks">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Tasks
         </button>
-        <button class="nav-btn" onclick="setView('log')"        id="vbtn-log">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-          Log Mail
-        </button>
-        <button class="nav-btn" onclick="setView('maillog')"    id="vbtn-maillog">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        <button class="nav-btn" onclick="setView('maillog')" id="vbtn-maillog">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
           Mail Log
         </button>
         <button class="nav-btn" onclick="setView('exceptions')" id="vbtn-exceptions">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Exceptions
         </button>
-        <button class="nav-btn" onclick="setView('plancards')"  id="vbtn-plancards">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        <button class="nav-btn" onclick="setView('plancards')" id="vbtn-plancards">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
           Plan Cards
         </button>
-      </nav>
-            <div class="staff-name" id="header-name"></div>
-    </div>
-  </header>
+      </div>
+
+      <button class="nav-log-cta" onclick="setView('log')" id="vbtn-log">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Log Mail
+      </button>
+    </nav>
+
+    <!-- Right: staff identity -->
+    <div class="staff-name" id="header-name"></div>
+  </div>
 
   <div id="workspace" class="workspace"></div>
 </div>
