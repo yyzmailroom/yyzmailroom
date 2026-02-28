@@ -886,17 +886,67 @@ async function _editMailItem(body) {
   }
   if (Object.keys(updates).length === 0) return { status: 'ok' };
 
+  // If plan card is changing, adjust usage counters
+  if (updates.plan_card_id || updates.recipient_id) {
+    const { data: oldItem } = await sb.from('mail_log')
+      .select('plan_card_id, type, special_case')
+      .eq('mail_id', body.mailId).maybeSingle();
+
+    if (oldItem && !oldItem.special_case) {
+      const mailType = updates.type || oldItem.type || 'letter';
+      const field = mailType === 'parcel' ? 'parcels_used' : 'mails_used';
+      const oldPcId = oldItem.plan_card_id;
+      const newPcId = updates.plan_card_id || oldPcId;
+
+      if (oldPcId && newPcId && oldPcId !== newPcId) {
+        // Decrement old plan card
+        const { data: oldPc } = await sb.from('plan_cards').select(field)
+          .eq('plan_card_id', oldPcId).maybeSingle();
+        if (oldPc && oldPc[field] > 0) {
+          await sb.from('plan_cards').update({ [field]: oldPc[field] - 1 }).eq('plan_card_id', oldPcId);
+        }
+        // Increment new plan card
+        const { data: newPc } = await sb.from('plan_cards').select(field)
+          .eq('plan_card_id', newPcId).maybeSingle();
+        if (newPc) {
+          await sb.from('plan_cards').update({ [field]: newPc[field] + 1 }).eq('plan_card_id', newPcId);
+        }
+      }
+
+      // Mark new recipient has_mail_logged
+      if (updates.recipient_id) {
+        await sb.from('recipients').update({ has_mail_logged: true }).eq('recipient_id', updates.recipient_id);
+      }
+    }
+  }
+
   const { error } = await sb.from('mail_log').update(updates).eq('mail_id', body.mailId);
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok' };
 }
 
 async function _deleteMailItem(body) {
+  // Get item details before deleting to adjust counter
+  const { data: item } = await sb.from('mail_log')
+    .select('plan_card_id, type, special_case')
+    .eq('mail_id', body.mailId).maybeSingle();
+
   // Soft delete
   const { error } = await sb.from('mail_log')
     .update({ status: 'deleted' })
     .eq('mail_id', body.mailId);
   if (error) return { status: 'error', message: error.message };
+
+  // Decrement usage counter
+  if (item && item.plan_card_id && !item.special_case) {
+    const field = item.type === 'parcel' ? 'parcels_used' : 'mails_used';
+    const { data: pc } = await sb.from('plan_cards').select(field)
+      .eq('plan_card_id', item.plan_card_id).maybeSingle();
+    if (pc && pc[field] > 0) {
+      await sb.from('plan_cards').update({ [field]: pc[field] - 1 }).eq('plan_card_id', item.plan_card_id);
+    }
+  }
+
   return { status: 'ok' };
 }
 
