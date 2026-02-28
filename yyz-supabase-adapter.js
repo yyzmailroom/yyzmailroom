@@ -503,7 +503,7 @@ async function _searchRecipients(uuid, q) {
   const locId = staff?.default_location_id;
 
   const { data } = await sb.from('recipients')
-    .select('*, plan_cards!inner(plan_card_id, client_id, subscription_id, plan_name, auto_feature, status, friendly_name)')
+    .select('*, plan_cards!inner(plan_card_id, client_id, subscription_id, plan_name, auto_feature, status, friendly_name, parcel_limit)')
     .eq('location_id', locId)
     .in('status', ['active', 'inactive']);
 
@@ -539,6 +539,7 @@ async function _searchRecipients(uuid, q) {
       planName:       pc?.plan_name,
       friendlyName:   pc?.friendly_name || null,
       autoFeature:    pc?.auto_feature,
+      parcelLimit:    pc?.parcel_limit ?? 0,
       accessStatus,
       recipientStatus: r.status,
       planStatus:      pc?.status,
