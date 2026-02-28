@@ -429,6 +429,38 @@
   .suggest-chips .qnote-chip { background: var(--bg); }
   .suggest-chips .qnote-chip:hover { background: var(--white); border-color: var(--ink-3); color: var(--ink); }
 
+  /* ── Scan mode toggle & drop zone ──────────────────── */
+  .scan-mode-toggle {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  }
+  .scan-mode-btn {
+    padding: 4px 12px; font-size: 11px; font-weight: 500; font-family: inherit;
+    border: none; background: var(--white); color: var(--ink-3); cursor: pointer;
+    transition: all 0.15s;
+  }
+  .scan-mode-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .scan-mode-btn.active { background: var(--ink); color: #fff; }
+  .scan-mode-btn:hover:not(.active) { background: var(--bg); }
+  .scan-drop-zone {
+    border: 2px dashed var(--border); border-radius: var(--radius-sm);
+    padding: 16px; text-align: center; cursor: pointer;
+    transition: all 0.2s; display: flex; flex-direction: column;
+    align-items: center; gap: 4px;
+  }
+  .scan-drop-zone:hover, .scan-drop-zone.dragover {
+    border-color: var(--blue); background: var(--blue-bg);
+  }
+  .scan-file-info {
+    display: flex; align-items: center; gap: 8px; padding: 8px 0;
+    font-size: 12px;
+  }
+  .scan-file-info .file-name { font-weight: 500; color: var(--ink); }
+  .scan-file-info .file-size { color: var(--ink-4); }
+  .scan-file-info .remove-btn {
+    margin-left: auto; color: var(--red); cursor: pointer;
+    background: none; border: none; font-size: 13px; font-family: inherit;
+  }
+
   /* ── Buttons ────────────────────────────────────────── */
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1223,8 +1255,28 @@ function renderLogForm(container) {
             <input type="text" id="log-pieces" value="1">
           </div>
           <div class="form-group" id="scan-field-wrap">
-            <label>Scan Image URL <span style="color:var(--ink-4);text-transform:normal;font-weight:400" id="scan-url-hint">(optional)</span></label>
-            <input type="text" id="log-scan" placeholder="https://drive.google.com/...">
+            <label>Scanned File <span style="color:var(--ink-4);text-transform:normal;font-weight:400" id="scan-url-hint">(optional)</span></label>
+            <div class="scan-mode-toggle" style="margin-bottom:6px">
+              <button type="button" class="scan-mode-btn active" id="scan-mode-url" onclick="setScanMode('url')">🔗 URL</button>
+              <button type="button" class="scan-mode-btn" id="scan-mode-upload" onclick="setScanMode('upload')">📄 Upload</button>
+            </div>
+            <div id="scan-url-input">
+              <input type="text" id="log-scan" placeholder="https://drive.google.com/...">
+            </div>
+            <div id="scan-upload-input" style="display:none">
+              <div id="scan-drop-zone" class="scan-drop-zone" onclick="qs('scan-file-input').click()"
+                ondragover="event.preventDefault();this.classList.add('dragover')"
+                ondragleave="this.classList.remove('dragover')"
+                ondrop="event.preventDefault();this.classList.remove('dragover');handleScanDrop(event)">
+                <div id="scan-drop-label">
+                  <span style="font-size:20px">📎</span>
+                  <span style="font-size:12px;color:var(--ink-3)">Click or drag file here</span>
+                  <span style="font-size:10px;color:var(--ink-4)">JPG, PNG, PDF — max 5 MB</span>
+                </div>
+                <div id="scan-file-preview" style="display:none"></div>
+              </div>
+              <input type="file" id="scan-file-input" accept="image/*,.pdf" style="display:none" onchange="handleScanFile(this.files[0])">
+            </div>
           </div>
         </div>
 
@@ -1306,6 +1358,8 @@ function renderLogForm(container) {
 
   qs('log-type').addEventListener('change', onMailTypeChange);
   loadLogSuggestions();
+  _scanMode = 'url';
+  _scanFile = null;
 }
 
 function onConfidentialToggle() {
@@ -1411,6 +1465,78 @@ function updateScanUrlRequirement() {
     hint.textContent = mandatory ? '(required for scan plan)' : '(optional)';
     hint.style.color = mandatory ? 'var(--red)' : 'var(--ink-4)';
   }
+}
+
+// ── Scan mode (URL vs Upload) ────────────────────────────
+let _scanMode = 'url';
+let _scanFile = null;
+
+function setScanMode(mode) {
+  _scanMode = mode;
+  const urlBtn = qs('scan-mode-url'), uploadBtn = qs('scan-mode-upload');
+  const urlInput = qs('scan-url-input'), uploadInput = qs('scan-upload-input');
+  if (urlBtn) urlBtn.classList.toggle('active', mode === 'url');
+  if (uploadBtn) uploadBtn.classList.toggle('active', mode === 'upload');
+  if (urlInput) urlInput.style.display = mode === 'url' ? 'block' : 'none';
+  if (uploadInput) uploadInput.style.display = mode === 'upload' ? 'block' : 'none';
+}
+
+function handleScanDrop(e) {
+  const file = e.dataTransfer.files[0];
+  if (file) handleScanFile(file);
+}
+
+function handleScanFile(file) {
+  if (!file) return;
+  const maxSize = 5 * 1024 * 1024;
+  if (file.size > maxSize) { toast('File too large — max 5 MB', 'error'); return; }
+  const allowed = ['image/jpeg','image/png','image/webp','application/pdf'];
+  if (!allowed.includes(file.type)) { toast('Unsupported file type — use JPG, PNG, or PDF', 'error'); return; }
+  _scanFile = file;
+  const sizeStr = file.size < 1024*1024
+    ? (file.size/1024).toFixed(0) + ' KB'
+    : (file.size/1024/1024).toFixed(1) + ' MB';
+  const icon = file.type === 'application/pdf' ? '📄' : '🖼️';
+  const label = qs('scan-drop-label');
+  const preview = qs('scan-file-preview');
+  if (label) label.style.display = 'none';
+  if (preview) {
+    preview.style.display = 'block';
+    preview.innerHTML = `
+      <div class="scan-file-info">
+        <span style="font-size:18px">${icon}</span>
+        <span class="file-name">${file.name}</span>
+        <span class="file-size">${sizeStr}</span>
+        <button class="remove-btn" onclick="event.stopPropagation();clearScanFile()">✕ Remove</button>
+      </div>`;
+  }
+}
+
+function clearScanFile() {
+  _scanFile = null;
+  const label = qs('scan-drop-label');
+  const preview = qs('scan-file-preview');
+  const input = qs('scan-file-input');
+  if (label) label.style.display = 'flex';
+  if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
+  if (input) input.value = '';
+}
+
+function getScanValue() {
+  // Returns URL string or null — upload mode stores file in _scanFile for future Supabase storage
+  if (_scanMode === 'url') {
+    return qs('log-scan') ? qs('log-scan').value.trim() : '';
+  }
+  // For upload mode, return a placeholder that indicates file is pending
+  // When Supabase storage is enabled, this will upload and return the URL
+  if (_scanFile) return 'file:pending:' + _scanFile.name;
+  return '';
+}
+
+function resetScanField() {
+  setScanMode('url');
+  if (qs('log-scan')) qs('log-scan').value = '';
+  clearScanFile();
 }
 
 
@@ -1753,10 +1879,9 @@ async function submitLogMail() {
   const type           = qs('log-type') ? qs('log-type').value : 'letter';
   const isScanPlan     = pc && pc.autoFeature === 'scan';
   const scanMandatory  = !isSpecial && isScanPlan && type === 'letter' && !isConfidential;
-  const scanUrl        = qs('log-scan') ? qs('log-scan').value.trim() : '';
+  const scanUrl        = getScanValue();
   if (scanMandatory && !scanUrl) {
-    toast('Scan image URL is required for scan plans', 'error');
-    if (qs('log-scan')) qs('log-scan').focus();
+    toast('Scanned file is required for scan plans — paste a URL or upload a file', 'error');
     return;
   }
 
@@ -2250,7 +2375,7 @@ function openMailDetail(mailId) {
         ['Special Case',      m.specialCase==='TRUE'||m.specialCase===true ? '⚠️ Yes' : 'No'],
         ['Special Case Reason',m.specialCaseReason || '—'],
         ['Physical Location', m.physicalLocation || '—'],
-        ['Scan URL',          m.scanImageUrl ? '<a href="'+m.scanImageUrl+'" target="_blank" style="color:var(--blue)">View ↗</a>' : '—'],
+        ['Scanned File',       m.scanImageUrl ? '<a href="'+m.scanImageUrl+'" target="_blank" style="color:var(--blue)">View ↗</a>' : '—'],
         ['Note to Client',    m.noteToClient || '—'],
         ['Internal Note',     m.noteInternal || '—'],
         ['Logged At',         m.loggedAt],
@@ -2477,7 +2602,7 @@ async function submitAssign(mailId) {
       _assignTarget = null;
       // If plan requires scan, prompt for scan URL before dismissing
       if (result.needsScan) {
-        const scanUrl = await appPrompt({ title: '🔍 Scan Plan', message: 'This recipient is on a scan plan. Please enter the Scan Image URL:', placeholder: 'https://drive.google.com/...', required: true, confirmLabel: 'Save URL' });
+        const scanUrl = await appPrompt({ title: '🔍 Scan Plan', message: 'This recipient is on a scan plan. Please provide the scanned file URL:', placeholder: 'https://drive.google.com/...', required: true, confirmLabel: 'Save' });
         if (scanUrl && scanUrl.trim()) {
           await apiPost({ action:'editMailItem', uuid:STATE.uuid, mailId, scanImageUrl: scanUrl.trim() });
         }
@@ -3052,7 +3177,7 @@ async function openEditMailModal(mailIdEnc) {
             <input id="em-location" type="text" value="${item.physicalLocation||''}" placeholder="e.g. Shelf A3" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
           </div>
           <div>
-            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Scan URL</label>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3);display:block;margin-bottom:4px">Scanned File URL</label>
             <input id="em-scan" type="text" value="${item.scanImageUrl||''}" placeholder="https://..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
           </div>
         </div>
