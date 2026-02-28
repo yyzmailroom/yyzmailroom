@@ -298,7 +298,10 @@ async function _submitOnboarding(body) {
   // Cap day to last day of renewal month
   const lastDay = new Date(renewYear, renewMonth, 0).getDate();
   renewDay = Math.min(renewDay, lastDay);
-  const periodEnd = `${renewYear}-${String(renewMonth).padStart(2,'0')}-${String(renewDay).padStart(2,'0')}`;
+  // period_end = last day of access (renewal date minus 1)
+  const renewDate = new Date(renewYear, renewMonth - 1, renewDay);
+  renewDate.setDate(renewDate.getDate() - 1);
+  const periodEnd = `${renewDate.getFullYear()}-${String(renewDate.getMonth() + 1).padStart(2,'0')}-${String(renewDate.getDate()).padStart(2,'0')}`;
 
   const { error } = await sb.from('plan_cards').insert({
     plan_card_id:       planCardId,
