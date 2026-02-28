@@ -1749,7 +1749,12 @@ async function rcSubmit(planCardId) {
       });
       if (result.status !== 'ok') throw new Error(result.message || 'Failed to add: ' + rec.name);
     }
-    // Plan is now active — show success screen instead of dumping into next plan
+    // Plan is now active — update state so switcher doesn't show setup again
+    const activeSub = STATE.activeSub;
+    if (activeSub) {
+      activeSub.setupRequired = false;
+      activeSub.setupStep = null;
+    }
     clearCachedAuth(STATE.uuid);
     renderOnboardingSuccess(planCardId);
   } catch (err) {
