@@ -1316,7 +1316,7 @@ function showRecipientResults(query, results) {
   if (!results) return;
   const q    = query.toLowerCase();
   const hits = (_recipientCache || []).filter(r =>
-    [r.name, r.companyName, r.planCardId, r.planName]
+    [r.name, r.companyName, r.planCardId, r.planName, r.clientName, r.friendlyName]
       .join(' ').toLowerCase().includes(q)
   ).slice(0, 10);
 
@@ -1339,27 +1339,30 @@ function showRecipientResults(query, results) {
     const isTemp = r.notes && r.notes.startsWith('TEMP:');
     const payload = JSON.stringify({
       recipientId: r.recipientId, name: r.name, companyName: r.companyName,
-      planCardId: r.planCardId, clientId: r.clientId,
+      planCardId: r.planCardId, clientId: r.clientId, clientName: r.clientName,
       subscriptionId: r.subscriptionId, accessStatus: r.accessStatus,
-      notes: r.notes, locationId: r.locationId, status: r.recipientStatus
+      notes: r.notes, locationId: r.locationId, status: r.recipientStatus,
+      friendlyName: r.friendlyName, planName: r.planName
     }).replace(/"/g, '&quot;');
     const statusColor = r.accessStatus === 'ACTIVE' ? 'var(--green)' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? 'var(--amber)' : r.accessStatus === 'PAYMENT_REQUIRED' ? 'var(--red)' : 'var(--ink-4)';
     const statusLabel = r.accessStatus === 'ACTIVE' ? '● Active' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? '● Access Until Period End' : r.accessStatus === 'PAYMENT_REQUIRED' ? '⛔ Payment Required' : r.accessStatus === 'CANCELED' ? '✕ Canceled' : r.accessStatus || 'Unknown';
 
     const tempBadge = isTemp ? '<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2;margin-left:4px">TEMP</span>' : '';
     const inactiveBadge = isInactive ? '<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0;margin-left:4px">INACTIVE</span>' : '';
+    const displayPlan = r.friendlyName && !r.friendlyName.startsWith('TEMP:') ? r.friendlyName : (r.planName || r.planCardId);
+    const clientLabel = r.clientName ? `<span style="color:var(--ink-4)">· ${r.clientName}</span>` : '';
 
     if (isInactive) {
       return `<div class="recipient-result-item" style="opacity:0.45;cursor:not-allowed;pointer-events:none">
         <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}${inactiveBadge}</div>
-        <div class="rri-sub" style="font-size:10px;color:#9E9E9E">Inactive — reactivate from Plan Cards to log mail</div>
+        <div class="rri-sub" style="font-size:10px;color:#9E9E9E">${displayPlan} ${clientLabel} · Inactive</div>
       </div>`;
     }
 
     return `<div class="recipient-result-item" onclick="selectRecipient(${payload})">
       <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}${tempBadge}</div>
       <div class="rri-sub" style="display:flex;gap:8px;align-items:center">
-        <span>${r.planName || r.planCardId}</span>
+        <span>${displayPlan} ${clientLabel}</span>
         <span style="font-size:10px;font-weight:600;color:${statusColor}">${statusLabel}</span>
       </div>
     </div>`;
@@ -1388,9 +1391,37 @@ function selectRecipient(data) {
     box.style.display = 'block';
     const nameEl  = qs('sel-rec-name');
     const subEl   = qs('sel-rec-sub');
+    const displayPlan = data.friendlyName && !data.friendlyName.startsWith('TEMP:') ? data.friendlyName : (data.planName || data.planCardId);
     if (nameEl) nameEl.innerHTML = data.name + (data.companyName ? ' — ' + data.companyName : '')
       + (isTemp ? ' <span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2">TEMP</span>' : '');
-    if (subEl)  subEl.textContent  = (data.planName || data.planCardId) + ' · ' + (data.clientId || '').slice(0,12) + '...';
+    if (subEl)  subEl.innerHTML = `${displayPlan}${data.clientName ? ' · <strong>' + data.clientName + '</strong>' : ''}`;
+
+    // Build expandable other recipients on same plan card
+    const oldOther = box.querySelector('.other-recs-wrap');
+    if (oldOther) oldOther.remove();
+    const siblings = (_recipientCache || []).filter(r =>
+      r.planCardId === data.planCardId && r.recipientId !== data.recipientId
+    );
+    if (siblings.length > 0) {
+      const otherDiv = document.createElement('div');
+      otherDiv.className = 'other-recs-wrap';
+      otherDiv.innerHTML = `
+        <button onclick="const el=this.nextElementSibling;const ch=this.querySelector('span');if(el.style.display==='none'){el.style.display='block';ch.style.transform='rotate(90deg)'}else{el.style.display='none';ch.style.transform='rotate(0deg)'}"
+          style="display:flex;align-items:center;gap:5px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;color:var(--ink-4);padding:6px 0 2px;font-weight:600">
+          <span style="display:inline-block;transition:transform .2s;font-size:10px">▸</span>
+          Other recipients on this plan (${siblings.length})
+        </button>
+        <div style="display:none;padding:4px 0 2px">
+          ${siblings.map(s => {
+            const sTemp = s.notes && s.notes.startsWith('TEMP:');
+            const sInactive = s.recipientStatus === 'inactive';
+            const badge = sTemp ? '<span style="font-size:8px;font-weight:600;padding:0 4px;border-radius:6px;background:#FFF3E0;color:#E65100;margin-left:4px">TEMP</span>'
+              : sInactive ? '<span style="font-size:8px;font-weight:600;padding:0 4px;border-radius:6px;background:#F5F5F5;color:#9E9E9E;margin-left:4px">INACTIVE</span>' : '';
+            return '<div style="font-size:12px;color:var(--ink-3);padding:2px 0;'+(sInactive?'opacity:0.5;':'')+'">' + s.name + badge + '</div>';
+          }).join('')}
+        </div>`;
+      box.appendChild(otherDiv);
+    }
 
     // Payment status warning
     const isBlocked = data.accessStatus && data.accessStatus !== 'ACTIVE' && data.accessStatus !== 'CANCELED_WITH_ACCESS';
