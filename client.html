@@ -2070,13 +2070,11 @@ function buildPlanCard(sub, access, pc, recipients) {
 
   // Recipients — temps don't count toward slot allotment
   const maxR     = pc ? (parseInt(pc.maxRecipients) || 1) : 1;
-  const activeR  = recipients.filter(r => r.status === 'active' && !(r.notes && r.notes.startsWith('TEMP:'))).length;
-  const pendingR = recipients.filter(r => r.status !== 'active' && !(r.notes && r.notes.startsWith('TEMP:'))).length;
-  const canAddR  = activeR < maxR;
-
   const _regRecs  = recipients.filter(r => !(r.notes && r.notes.startsWith('TEMP:')));
   const _tempRecs = recipients.filter(r =>   r.notes && r.notes.startsWith('TEMP:'));
-  const allRecs   = [..._regRecs, ..._tempRecs];
+  const activeR  = _regRecs.filter(r => r.status === 'active').length;
+  const inactiveR = _regRecs.filter(r => r.status !== 'active').length;
+  const canAddR  = activeR < maxR;
 
   // ── Plan header ──
   const planHeaderHtml = `
@@ -2143,14 +2141,14 @@ function buildPlanCard(sub, access, pc, recipients) {
       <div class="stat-card blue">
         <div class="stat-label">Recipients</div>
         <div class="stat-value">${activeR}</div>
-        <div class="stat-sub">of <strong>${maxR}</strong> slots${pendingR > 0 ? ' · ' + pendingR + ' pending' : ''}</div>
+        <div class="stat-sub">of <strong>${maxR}</strong> slots${inactiveR > 0 ? ' · ' + inactiveR + ' inactive' : ''}</div>
       </div>
     </div>` : `
     <div class="stats-row" style="margin-bottom:16px">
       <div class="stat-card blue">
         <div class="stat-label">Recipients</div>
         <div class="stat-value">${activeR}</div>
-        <div class="stat-sub">of <strong>${maxR}</strong> slots${pendingR > 0 ? ' · ' + pendingR + ' pending' : ''}</div>
+        <div class="stat-sub">of <strong>${maxR}</strong> slots${inactiveR > 0 ? ' · ' + inactiveR + ' inactive' : ''}</div>
       </div>
     </div>`;
 
@@ -2161,32 +2159,69 @@ function buildPlanCard(sub, access, pc, recipients) {
       <div style="font-size:13px;color:var(--ink-2)">${fwdAddr}</div>
     </div>` : '';
 
-  // ── Recipient rows ──
-  const recItemsHtml = allRecs.length > 0 ? allRecs.map(r => {
-    const isTemp   = r.notes && r.notes.startsWith('TEMP:');
+  // ── Regular recipient rows ──
+  function _recRow(r) {
     const initials = (r.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
     const typeLabel = r.type === 'company' ? 'Company' : 'Individual';
     const langLabel = r.language === 'fr' ? 'FR' : 'EN';
+    const isActive = r.status === 'active';
+    const avatarBg = isActive ? '' : 'background:#F5F5F5;color:#9E9E9E;opacity:0.7;';
+    const nameStyle = isActive ? '' : 'color:var(--ink-4);';
     return `
       <div class="recipient-item">
-        <div class="recipient-avatar">${initials}</div>
+        <div class="recipient-avatar" ${!isActive ? `style="${avatarBg}"` : ''}>${initials}</div>
         <div class="recipient-info">
-          <div class="recipient-name">${r.name || '—'}</div>
+          <div class="recipient-name" style="${nameStyle}display:flex;align-items:center;gap:6px">
+            ${r.name || '—'}
+            ${!isActive ? '<span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0">Inactive</span>' : ''}
+          </div>
           <div class="recipient-company">${typeLabel} · ${langLabel}</div>
         </div>
         <div class="recipient-status">
-          ${r.status === 'active'
-            ? '<span class="pill scanned">Active</span>'
-            : isTemp
-              ? '<span class="pill stored">Pending</span>'
-              : '<span class="pill stored">Inactive</span>'}
+          ${isActive ? '<span class="pill scanned">Active</span>' : ''}
         </div>
       </div>`;
-  }).join('') : `
+  }
+
+  const regRecItemsHtml = _regRecs.length > 0 ? _regRecs.map(r => _recRow(r)).join('') : `
     <div style="padding:24px 0;text-align:center;color:var(--ink-4)">
       <div style="font-size:22px;margin-bottom:6px">👤</div>
       <div style="font-size:13px">No recipients yet</div>
     </div>`;
+
+  // ── Temp recipient rows (collapsible) ──
+  const tempRecsHtml = _tempRecs.length > 0 ? `
+    <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+      <button onclick="const el=document.getElementById('temp-recs-${safeId}');const ic=document.getElementById('temp-chevron-${safeId}');if(el.style.display==='none'){el.style.display='block';ic.style.transform='rotate(90deg)'}else{el.style.display='none';ic.style.transform='rotate(0deg)'}"
+        style="display:flex;align-items:center;gap:6px;width:100%;padding:6px 0;background:none;border:none;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em">
+        <svg id="temp-chevron-${safeId}" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="transition:transform .2s"><polyline points="9 18 15 12 9 6"/></svg>
+        Temporary Recipients
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;padding:1px 6px;background:var(--bg-2);border-radius:10px">${_tempRecs.length}</span>
+      </button>
+      <div id="temp-recs-${safeId}" style="display:none">
+        <div style="font-size:11px;color:var(--ink-4);margin-bottom:8px;line-height:1.5;padding:0 2px">
+          Added by our staff to capture mail for names not on your regular recipient list.
+        </div>
+        ${_tempRecs.map(r => {
+          const initials = (r.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+          const note = r.notes ? r.notes.replace(/^TEMP:\s*/, '') : '';
+          return `
+            <div class="recipient-item" style="opacity:0.8">
+              <div class="recipient-avatar" style="background:#FFF3E0;color:#E65100">${initials}</div>
+              <div class="recipient-info">
+                <div class="recipient-name" style="display:flex;align-items:center;gap:6px">
+                  ${r.name || '—'}
+                  <span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2">Temporary</span>
+                </div>
+                <div class="recipient-company">${note || 'Staff-added recipient'}</div>
+              </div>
+              <div class="recipient-status">
+                ${r.status === 'active' ? '<span class="pill scanned">Active</span>' : '<span style="font-size:10px;color:#9E9E9E">Inactive</span>'}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
 
   // ── Add recipient form — matches onboarding style ──
   const addRecipientForm = canAddR ? `
@@ -2227,11 +2262,12 @@ function buildPlanCard(sub, access, pc, recipients) {
   const recsHtml = `
     <div style="margin-bottom:16px">
       <div class="section-header">
-        <span class="section-title">Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">${activeR} / ${maxR}</span></span>
+        <span class="section-title">Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">${activeR} / ${maxR}${inactiveR > 0 ? ' · ' + inactiveR + ' inactive' : ''}</span></span>
       </div>
       <div class="card" style="padding:8px 16px 4px">
-        <div class="recipient-list">${recItemsHtml}</div>
+        <div class="recipient-list">${regRecItemsHtml}</div>
         ${addRecipientForm}
+        ${tempRecsHtml}
         <div style="padding-bottom:12px"></div>
       </div>
     </div>`;
@@ -2293,13 +2329,28 @@ async function submitAddRecipient(e, subscriptionId, safeId) {
     });
     if (result.status !== 'ok') throw new Error(result.message || 'Failed');
     toast('Recipient added!', 'success');
+
+    // Reset form fields but stay on plan card
     if (nameEl) nameEl.value = '';
-    // Refresh recipients
+    if (typeEl) typeEl.value = 'individual';
+    if (langEl) langEl.value = 'en';
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '+ Add Recipient'; }
+    const hintEl = document.getElementById('ar-name-hint-' + safeId);
+    if (hintEl) hintEl.style.display = 'none';
+
+    // Refresh recipients and re-render plan card (will preserve scroll)
     const rRes = await apiPost({ action:'getRecipients', uuid:STATE.uuid, subscriptionId });
     if (rRes.status === 'ok') {
       STATE.recipients = rRes.recipients || [];
+      // Also refresh plan card data to get updated recipients_added count
+      const pcRes = await apiPost({ action:'getPlanCard', uuid:STATE.uuid, subscriptionId });
+      if (pcRes.status === 'ok' && pcRes.planCard) {
+        STATE.planCard = pcRes.planCard;
+        if (STATE.allPlanCards) STATE.allPlanCards[subscriptionId] = pcRes.planCard;
+      }
       const sub = (STATE.allSubs||[]).find(s=>s.subscriptionId===subscriptionId) || STATE.activeSub;
-      buildPlanCard(sub, STATE.access, pc, STATE.recipients);
+      const updatedPc = STATE.allPlanCards ? STATE.allPlanCards[subscriptionId] : STATE.planCard;
+      buildPlanCard(sub, STATE.access, updatedPc, STATE.recipients);
     }
   } catch(err) {
     toast(err.message, 'error');
