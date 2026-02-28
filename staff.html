@@ -2302,7 +2302,7 @@ function renderPlanCardsList(planCards) {
           <span style="color:var(--ink-4);font-size:14px;flex-shrink:0" id="pc-chevron-${i}">▸</span>
         </div>
 
-        <div id="pc-body-${i}" style="display:none" class="pc-card-body">
+        <div id="pc-body-${i}" style="display:none" class="pc-card-body" data-pcid="${pc.planCardId}">
 
           <!-- Client Info -->
           <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
@@ -2440,6 +2440,16 @@ function renderPlanCardsList(planCards) {
         </div>
       </div>`;
   }).join('');
+
+  // Restore previously open card
+  if (_openPcCardId) {
+    for (let idx = 0; idx < planCards.length; idx++) {
+      if (planCards[idx].planCardId === _openPcCardId) {
+        togglePcCard(idx);
+        break;
+      }
+    }
+  }
 }
 
 function openAddTempRecipient(planCardId, i) {
@@ -2534,6 +2544,8 @@ function tmpReset(i) {
 }
 
 
+let _openPcCardId = null; // track which plan card is expanded
+
 function togglePcCard(i) {
   const body=qs('pc-body-'+i), chevron=qs('pc-chevron-'+i), header=qs('pc-hdr-'+i);
   if (!body) return;
@@ -2541,6 +2553,9 @@ function togglePcCard(i) {
   body.style.display=open?'block':'none';
   if (chevron) chevron.textContent=open?'▾':'▸';
   if (header)  header.classList.toggle('open',open);
+  // Track which card is open by planCardId
+  const pcId = body.dataset.pcid || null;
+  _openPcCardId = open ? pcId : null;
 }
 
 function openEditRecipient(recipientId, name, companyName) {
