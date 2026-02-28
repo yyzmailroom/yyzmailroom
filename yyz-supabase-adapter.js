@@ -81,6 +81,7 @@ async function apiPost(body) {
     case 'updateFriendlyName': return _updateFriendlyName(body);
     case 'addAgent':         return _addAgent(body);
     case 'removeAgent':      return _removeAgent(body);
+    case 'updateForwardingAddress': return _updateForwardingAddress(body);
 
     // ── Staff writes ──
     case 'logMail':               return _logMail(body);
@@ -477,6 +478,19 @@ async function _removeAgent(body) {
   const { error } = await sb.from('pickup_agents').update(updates).eq('agent_id', body.agentId);
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok', newStatus };
+}
+
+async function _updateForwardingAddress(body) {
+  const { error } = await sb.from('plan_cards').update({
+    forwarding_address:      body.forwardingAddress || null,
+    forwarding_city:         body.forwardingCity || null,
+    forwarding_province:     body.forwardingProvince || null,
+    forwarding_postal_code:  body.forwardingPostalCode || null,
+    forwarding_country:      body.forwardingCountry || null,
+    forwarding_instructions: body.forwardingInstructions || null
+  }).eq('plan_card_id', body.planCardId);
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok' };
 }
 
 // ============================================================
