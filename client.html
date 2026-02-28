@@ -960,8 +960,8 @@ function renderBlockedSub(sub) {
     <div class="blocked-screen">
       <div class="blocked-card">
         <div class="blocked-icon">${icon}</div>
-        <div class="blocked-title">${b.title || 'Access Unavailable'}</div>
-        <p class="blocked-msg">${b.message || ''}</p>
+        <div class="blocked-title">${b.title || 'Plan Setup Pending'}</div>
+        <p class="blocked-msg">${b.message || 'Please complete your payment to set up and access your plan.'}</p>
         ${b.reason ? `<div class="blocked-reason">Reason: ${b.reason}</div>` : ''}
         ${btnHtml}
       </div>
