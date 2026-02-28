@@ -82,6 +82,7 @@ async function apiPost(body) {
     case 'addAgent':         return _addAgent(body);
     case 'removeAgent':      return _removeAgent(body);
     case 'updateForwardingAddress': return _updateForwardingAddress(body);
+    case 'updateBusinessDescription': return _updateBusinessDescription(body);
 
     // ── Staff writes ──
     case 'logMail':               return _logMail(body);
@@ -488,6 +489,14 @@ async function _updateForwardingAddress(body) {
     forwarding_postal_code:  body.forwardingPostalCode || null,
     forwarding_country:      body.forwardingCountry || null,
     forwarding_instructions: body.forwardingInstructions || null
+  }).eq('plan_card_id', body.planCardId);
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok' };
+}
+
+async function _updateBusinessDescription(body) {
+  const { error } = await sb.from('plan_cards').update({
+    business_description: body.businessDescription || null
   }).eq('plan_card_id', body.planCardId);
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok' };
