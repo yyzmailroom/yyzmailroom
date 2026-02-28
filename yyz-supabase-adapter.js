@@ -285,11 +285,20 @@ async function _submitOnboarding(body) {
   const planCardId = _genId('PC');
   const now = new Date().toISOString();
   const today = now.split('T')[0];
-  const periodStart = new Date(today);
-  let periodEnd = new Date(periodStart);
-  if (tmpl.billing_cycle === 'yearly') { periodEnd.setFullYear(periodEnd.getFullYear() + 1); }
-  else { periodEnd.setMonth(periodEnd.getMonth() + 1); }
-  periodEnd.setDate(periodEnd.getDate() - 1);
+  const periodStart = today;
+  // Calculate renewal date (next billing date)
+  const startParts = today.split('-').map(Number);
+  let renewYear = startParts[0], renewMonth = startParts[1], renewDay = startParts[2];
+  if (tmpl.billing_cycle === 'yearly') {
+    renewYear += 1;
+  } else {
+    renewMonth += 1;
+    if (renewMonth > 12) { renewMonth = 1; renewYear += 1; }
+  }
+  // Cap day to last day of renewal month
+  const lastDay = new Date(renewYear, renewMonth, 0).getDate();
+  renewDay = Math.min(renewDay, lastDay);
+  const periodEnd = `${renewYear}-${String(renewMonth).padStart(2,'0')}-${String(renewDay).padStart(2,'0')}`;
 
   const { error } = await sb.from('plan_cards').insert({
     plan_card_id:       planCardId,
@@ -308,7 +317,7 @@ async function _submitOnboarding(body) {
     mail_overage_fee:   tmpl.mail_overage_fee,
     parcel_overage_fee: tmpl.parcel_overage_fee,
     current_period_start: today,
-    current_period_end:   periodEnd.toISOString().split('T')[0],
+    current_period_end:   periodEnd,
     auto_forward_day:     tmpl.auto_forward_day,
     forwarding_address:   body.forwardingAddress || null,
     forwarding_city:      body.forwardingCity || null,
