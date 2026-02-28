@@ -592,6 +592,33 @@
   /* Refresh animation */
   @keyframes spin { to { transform: rotate(360deg); } }
   .refreshing { animation: spin 0.8s linear infinite; display:inline-block; }
+  /* ── In-app modal ────────────────────────────────────── */
+  .app-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; animation: fadeIn 0.15s ease;
+  }
+  @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+  .app-modal {
+    background: var(--white); border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18); padding: 24px;
+    max-width: 420px; width: 90%; animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(12px); opacity:0 } to { transform: translateY(0); opacity:1 } }
+  .app-modal-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--ink); }
+  .app-modal-msg { font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-bottom: 16px; }
+  .app-modal input, .app-modal textarea {
+    width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-size: 13px; font-family: inherit;
+    margin-bottom: 14px; box-sizing: border-box;
+  }
+  .app-modal textarea { min-height: 60px; resize: vertical; }
+  .app-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .app-modal-actions .btn { min-width: 80px; }
+  .app-modal .btn-danger {
+    background: #D32F2F; border-color: #D32F2F; color: #fff;
+  }
+  .app-modal .btn-danger:hover { background: #B71C1C; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="yyz-supabase-adapter.js"></script>
@@ -683,6 +710,60 @@ let STATE = {
 
 // ── Utils ────────────────────────────────────────────────
 function qs(id) { return document.getElementById(id); }
+
+// ── In-app modal system ──────────────────────────────────
+function appConfirm({ title, message, confirmLabel, confirmClass, cancelLabel }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'app-modal-overlay';
+    overlay.innerHTML = `<div class="app-modal">
+      <div class="app-modal-title">${title || 'Confirm'}</div>
+      <div class="app-modal-msg">${message || 'Are you sure?'}</div>
+      <div class="app-modal-actions">
+        <button class="btn btn-secondary btn-sm" id="amc-cancel">${cancelLabel || 'Cancel'}</button>
+        <button class="btn btn-sm ${confirmClass || 'btn-primary'}" id="amc-ok">${confirmLabel || 'Confirm'}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#amc-ok').focus();
+    overlay.querySelector('#amc-ok').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#amc-cancel').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+  });
+}
+
+function appPrompt({ title, message, placeholder, inputType, confirmLabel, confirmClass, cancelLabel, required }) {
+  return new Promise(resolve => {
+    const isTextarea = inputType === 'textarea';
+    const inputHtml = isTextarea
+      ? `<textarea id="amp-input" placeholder="${placeholder || ''}" class="app-modal-input"></textarea>`
+      : `<input type="${inputType || 'text'}" id="amp-input" placeholder="${placeholder || ''}" class="app-modal-input">`;
+    const overlay = document.createElement('div');
+    overlay.className = 'app-modal-overlay';
+    overlay.innerHTML = `<div class="app-modal">
+      <div class="app-modal-title">${title || 'Input'}</div>
+      <div class="app-modal-msg">${message || ''}</div>
+      ${inputHtml}
+      <div class="app-modal-actions">
+        <button class="btn btn-secondary btn-sm" id="amp-cancel">${cancelLabel || 'Cancel'}</button>
+        <button class="btn btn-sm ${confirmClass || 'btn-primary'}" id="amp-ok">${confirmLabel || 'Submit'}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const inp = overlay.querySelector('#amp-input');
+    inp.focus();
+    const submit = () => {
+      const val = inp.value.trim();
+      if (required && !val) { inp.style.borderColor = 'var(--red)'; inp.focus(); return; }
+      overlay.remove(); resolve(val);
+    };
+    overlay.querySelector('#amp-ok').onclick = submit;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !isTextarea) submit(); });
+    overlay.querySelector('#amp-cancel').onclick = () => { overlay.remove(); resolve(null); };
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+  });
+}
+
 function getUUID() {
   return new URLSearchParams(window.location.search).get('uuid') || null;
 }
@@ -1750,8 +1831,8 @@ async function resolveTask(taskId) {
   }
 }
 
-function snoozePrompt(taskId) {
-  const d = prompt('Snooze until date (YYYY-MM-DD):');
+async function snoozePrompt(taskId) {
+  const d = await appPrompt({ title: 'Snooze Task', message: 'Enter the date to snooze until:', placeholder: 'YYYY-MM-DD', required: true, confirmLabel: 'Snooze' });
   if (d) snoozeTask(taskId, d);
 }
 
@@ -2396,7 +2477,7 @@ async function submitAssign(mailId) {
       _assignTarget = null;
       // If plan requires scan, prompt for scan URL before dismissing
       if (result.needsScan) {
-        const scanUrl = prompt('This is a SCAN plan.\nPlease enter the Scan Image URL for this item (required):');
+        const scanUrl = await appPrompt({ title: '🔍 Scan Plan', message: 'This recipient is on a scan plan. Please enter the Scan Image URL:', placeholder: 'https://drive.google.com/...', required: true, confirmLabel: 'Save URL' });
         if (scanUrl && scanUrl.trim()) {
           await apiPost({ action:'editMailItem', uuid:STATE.uuid, mailId, scanImageUrl: scanUrl.trim() });
         }
@@ -2408,9 +2489,9 @@ async function submitAssign(mailId) {
   } catch(err) { toast(err.message,'error'); if (btn) { btn.disabled=false; btn.textContent='Assign'; } }
 }
 
-function openDiscardModal(mailId) {
-  const reason = prompt('Reason for discarding this item:');
-  if (reason===null) return;
+async function openDiscardModal(mailId) {
+  const reason = await appPrompt({ title: 'Discard Item', message: 'Enter a reason for discarding this mail item:', placeholder: 'e.g. Junk mail, undeliverable...', confirmLabel: 'Discard', confirmClass: 'btn-danger' });
+  if (reason === null) return;
   apiPost({ action:'updateMailStatus', uuid:STATE.uuid, mailId, status:'discarded', note:reason })
     .then(r => { if (r.status==='ok') { toast('Item discarded','success'); loadExceptions(); } else toast(r.message||'Failed','error'); })
     .catch(e => toast(e.message,'error'));
@@ -2423,24 +2504,38 @@ function openDiscardModal(mailId) {
 async function renderPlanCardsView(container) {
   container.innerHTML = `
     <div style="max-width:900px;margin:0 auto">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-family:'DM Serif Display',serif;font-size:20px">🗂 Plan Cards</div>
-        <div style="display:flex;gap:8px">
-          <input type="text" id="pc-search" placeholder="Search client, email, plan, recipient..." style="padding:7px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;font-family:inherit;width:240px" oninput="filterPlanCards(this.value)">
-          <button id="pc-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="pc-last-refreshed" onclick="animRefresh('pc-refresh-btn', loadPlanCardsView)">↻</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div style="font-family:'DM Serif Display',serif;font-size:20px">Plan Cards</div>
+        <div style="display:flex;align-items:center;gap:6px">
           <span id="pc-last-refreshed" style="font-size:11px;color:var(--ink-4)"></span>
+          <button id="pc-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="pc-last-refreshed" onclick="animRefresh('pc-refresh-btn', loadPlanCardsView)">↻ Refresh</button>
         </div>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <input type="text" id="pc-search" placeholder="Search client, plan, recipient..."
+          style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit"
+          oninput="filterPlanCards(this.value)">
         <select id="pc-status-filter" onchange="filterPlanCards(qs('pc-search').value)"
-          style="padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit">
-          <option value="">All Plans</option>
-          <option value="ACTIVE">✅ Active</option>
-          <option value="PAYMENT_REQUIRED">⛔ Payment Required</option>
-          <option value="CANCELED_WITH_ACCESS">⚠️ Pending Cancellation</option>
-          <option value="CANCELED">✕ Cancelled</option>
+          style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit">
+          <option value="">All Statuses</option>
+          <option value="ACTIVE">Active</option>
+          <option value="PAYMENT_REQUIRED">Payment Required</option>
+          <option value="CANCELED_WITH_ACCESS">Pending Cancellation</option>
+          <option value="CANCELED">Cancelled</option>
+          <option value="SUSPENDED">Suspended</option>
+        </select>
+        <select id="pc-sort" onchange="filterPlanCards(qs('pc-search').value)"
+          style="padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:inherit">
+          <option value="name-asc">Client A→Z</option>
+          <option value="name-desc">Client Z→A</option>
+          <option value="plan-asc">Plan Name A→Z</option>
+          <option value="recipients-desc">Most Recipients</option>
+          <option value="recipients-asc">Fewest Recipients</option>
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
         </select>
       </div>
+      <div id="pc-count" style="font-size:11px;color:var(--ink-4);margin-bottom:8px"></div>
       <div id="pc-list"><div style="text-align:center;padding:40px;color:var(--ink-4)">Loading...</div></div>
     </div>`;
   await loadPlanCardsView();
@@ -2453,35 +2548,55 @@ async function loadPlanCardsView() {
   try {
     const data = await api(`uuid=${STATE.uuid}&action=getPlanCardsStaff`);
     _allPlanCards = data.planCards || [];
-    renderPlanCardsList(_allPlanCards);
+    filterPlanCards(qs('pc-search') ? qs('pc-search').value : '');
   } catch(e) { if(el) el.innerHTML=`<div style="color:var(--red);padding:20px">Error: ${e.message}</div>`; }
 }
 
 function filterPlanCards(query) {
   const q      = (query||'').toLowerCase();
   const status = qs('pc-status-filter') ? qs('pc-status-filter').value : '';
+  const sort   = qs('pc-sort') ? qs('pc-sort').value : 'name-asc';
   let filtered = _allPlanCards;
-  if (status) filtered = filtered.filter(pc => (pc.accessStatus||'') === status);
-  if (q)      filtered = filtered.filter(pc =>
+
+  // Status filter
+  if (status === 'SUSPENDED') {
+    filtered = filtered.filter(pc => pc.accessOverride === 'suspended' || pc.clientAccessOverride === 'suspended');
+  } else if (status) {
+    filtered = filtered.filter(pc => (pc.accessStatus||'') === status && pc.accessOverride !== 'suspended' && pc.clientAccessOverride !== 'suspended');
+  }
+
+  // Text search
+  if (q) filtered = filtered.filter(pc =>
     [pc.planCardId,pc.planName,pc.clientId,pc.clientName,pc.clientEmail||'',...(pc.recipients||[]).map(r=>r.name+' '+(r.companyName||'')+' '+(r.email||'')),pc.businessDescription||'',(pc.notes||''),(pc.referralSource||''),(pc.subscriptionId||'')].join(' ').toLowerCase().includes(q)
   );
+
+  // Sort
+  filtered = [...filtered].sort((a, b) => {
+    switch (sort) {
+      case 'name-asc':  return (a.clientName||'').localeCompare(b.clientName||'');
+      case 'name-desc': return (b.clientName||'').localeCompare(a.clientName||'');
+      case 'plan-asc':  return (a.planName||'').localeCompare(b.planName||'');
+      case 'recipients-desc': return (b.recipients||[]).filter(r=>r.status==='active').length - (a.recipients||[]).filter(r=>r.status==='active').length;
+      case 'recipients-asc':  return (a.recipients||[]).filter(r=>r.status==='active').length - (b.recipients||[]).filter(r=>r.status==='active').length;
+      case 'newest': return (b.createdAt||'').localeCompare(a.createdAt||'');
+      case 'oldest': return (a.createdAt||'').localeCompare(b.createdAt||'');
+      default: return 0;
+    }
+  });
+
+  // Count
+  const countEl = qs('pc-count');
+  if (countEl) {
+    const suspended = _allPlanCards.filter(pc => pc.accessOverride === 'suspended' || pc.clientAccessOverride === 'suspended').length;
+    const parts = [`${filtered.length} of ${_allPlanCards.length} plans`];
+    if (suspended > 0) parts.push(`${suspended} suspended`);
+    countEl.textContent = parts.join(' · ');
+  }
+
   renderPlanCardsList(filtered);
 }
 
 function renderPlanCardsList(planCards) {
-  // Apply status filter
-  const filterVal = STATE.planCardFilter || 'all';
-  if (filterVal !== 'all') {
-    planCards = planCards.filter(pc => {
-      const st = (pc.accessStatus || '').toUpperCase();
-      if (filterVal === 'active')   return st === 'ACTIVE';
-      if (filterVal === 'payment')  return st === 'PAYMENT_REQUIRED';
-      if (filterVal === 'canceled') return st === 'CANCELED';
-      if (filterVal === 'pending')  return st === 'CANCELED_WITH_ACCESS';
-      return true;
-    });
-  }
-
   const el = qs('pc-list'); if (!el) return;
   if (!planCards.length) {
     el.innerHTML = `<div style="text-align:center;padding:40px;color:var(--ink-4)">No plan cards found.</div>`;
@@ -2834,12 +2949,14 @@ async function saveRecipientEdit(recipientId) {
 }
 
 async function deactivateRecipient(recipientId, name) {
-  if (!confirm('Deactivate '+decodeURIComponent(name)+'? They will be marked inactive and cannot be selected when logging mail.')) return;
+  const ok = await appConfirm({ title: 'Deactivate Recipient', message: `Deactivate <strong>${decodeURIComponent(name)}</strong>? They will be marked inactive and cannot be selected when logging mail.`, confirmLabel: 'Deactivate', confirmClass: 'btn-danger' });
+  if (!ok) return;
   await _setRecipientStatus(recipientId, 'inactive');
 }
 
 async function reactivateRecipient(recipientId, name) {
-  if (!confirm('Re-activate '+decodeURIComponent(name)+'?')) return;
+  const ok = await appConfirm({ title: 'Re-activate Recipient', message: `Re-activate <strong>${decodeURIComponent(name)}</strong>?`, confirmLabel: 'Re-activate' });
+  if (!ok) return;
   await _setRecipientStatus(recipientId, 'active');
 }
 
@@ -2855,13 +2972,13 @@ async function _setRecipientStatus(recipientId, status) {
 
 // ── Plan / Account Lock ──────────────────────────────────
 async function togglePlanLock(planCardId, isCurrentlyLocked) {
-  const action = isCurrentlyLocked ? 'unlock' : 'suspend';
   let reason = '';
   if (!isCurrentlyLocked) {
-    reason = prompt('Reason for suspending this plan (optional):');
-    if (reason === null) return; // cancelled
+    reason = await appPrompt({ title: '🔒 Suspend Plan', message: 'The client will lose access to this plan. Mail logging will continue normally.', placeholder: 'Reason (optional)', confirmLabel: 'Suspend Plan', confirmClass: 'btn-danger' });
+    if (reason === null) return;
   } else {
-    if (!confirm('Unlock this plan? The client will regain access immediately.')) return;
+    const ok = await appConfirm({ title: '🔓 Unlock Plan', message: 'The client will regain access to this plan immediately.', confirmLabel: 'Unlock Plan' });
+    if (!ok) return;
   }
   try {
     const result = await apiPost({ action: 'togglePlanLock', uuid: STATE.uuid, planCardId, reason });
@@ -2873,14 +2990,13 @@ async function togglePlanLock(planCardId, isCurrentlyLocked) {
 }
 
 async function toggleAccountLock(clientId, clientName, isCurrentlyLocked) {
-  const action = isCurrentlyLocked ? 'unlock' : 'suspend';
   let reason = '';
   if (!isCurrentlyLocked) {
-    if (!confirm(`⚠️ Suspend entire account for ${clientName || clientId}?\n\nThis will block ALL plans under this client. Mail logging will continue but the client cannot access their portal.`)) return;
-    reason = prompt('Reason for suspending this account (optional):');
+    reason = await appPrompt({ title: '⚠️ Suspend Entire Account', message: `This will block <strong>ALL plans</strong> for <strong>${clientName || clientId}</strong>. The client cannot access their portal. Mail logging will continue normally.`, placeholder: 'Reason (optional)', confirmLabel: 'Suspend Account', confirmClass: 'btn-danger' });
     if (reason === null) return;
   } else {
-    if (!confirm(`Unlock the entire account for ${clientName || clientId}? All plans will be accessible again.`)) return;
+    const ok = await appConfirm({ title: '🔓 Unlock Account', message: `Unlock the entire account for <strong>${clientName || clientId}</strong>? All plans will be accessible again.`, confirmLabel: 'Unlock Account' });
+    if (!ok) return;
   }
   try {
     const result = await apiPost({ action: 'toggleAccountLock', uuid: STATE.uuid, clientId, reason });
@@ -3088,7 +3204,7 @@ async function saveEditMail() {
 async function confirmDeleteMail(mailIdEnc, recipNameEnc) {
   const mailId    = decodeURIComponent(mailIdEnc);
   const recipName = decodeURIComponent(recipNameEnc);
-  const pin = prompt(`⚠️ Delete mail item for "${recipName}"?\n\nThis cannot be undone. Enter staff PIN to confirm:`);
+  const pin = await appPrompt({ title: '⚠️ Delete Mail Item', message: `Permanently delete mail item for <strong>${recipName}</strong>? This cannot be undone.`, placeholder: 'Enter staff PIN to confirm', required: true, confirmLabel: 'Delete', confirmClass: 'btn-danger' });
   if (pin === null) return;
   if (pin !== '1234') { toast('Incorrect PIN — deletion cancelled', 'error'); return; }
   try {
