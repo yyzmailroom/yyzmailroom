@@ -238,11 +238,17 @@ async function _getClientMailLog(uuid, subscriptionId) {
     .order('logged_at', { ascending: false });
   if (error) return { status: 'error', message: error.message };
 
-  // Strip staff-only fields
+  // Strip staff-only fields and hide expired scans
+  const now = new Date().toISOString();
   const mailLog = (data || []).map(m => {
     const r = rowToCamel(m);
     delete r.noteInternal;
     delete r.physicalLocation;
+    // Hide scan if expired
+    if (r.scanExpiresAt && r.scanExpiresAt < now) {
+      r.scanImageUrl = null;
+      r.scanExpired = true;
+    }
     return r;
   });
   return { status: 'ok', mailLog };
@@ -746,6 +752,7 @@ async function _logMail(body) {
     sender_name:          body.senderName || null,
     physical_location:    body.physicalLocation || null,
     scan_image_url:       body.scanImageUrl || null,
+    scan_expires_at:      body.scanExpiresAt || null,
     note_to_client:       body.noteToClient || null,
     note_internal:        body.noteInternal || null,
     oversized_pickup:     body.oversizedPickup === true || body.oversizedPickup === 'true',
@@ -870,6 +877,7 @@ async function _editMailItem(body) {
   const fieldMap = {
     senderName: 'sender_name', type: 'type', confidential: 'confidential',
     physicalLocation: 'physical_location', scanImageUrl: 'scan_image_url',
+    scanExpiresAt: 'scan_expires_at',
     noteToClient: 'note_to_client', noteInternal: 'note_internal',
     oversizedPickup: 'oversized_pickup', pieceCount: 'piece_count',
     recipientId: 'recipient_id', recipientName: 'recipient_name',
