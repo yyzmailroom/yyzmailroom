@@ -414,20 +414,24 @@ async function _addAgent(body) {
     agent_id:     agentId,
     plan_card_id: body.planCardId,
     client_id:    body.uuid,
+    location_id:  body.locationId || null,
     name:         body.name,
-    relationship: body.relationship || null,
     id_type:      body.idType || null,
+    id_last4:     body.idLast4 || null,
+    phone:        body.phone || null,
     status:       'active',
-    created_at:   now,
-    created_by:   body.uuid
+    added_at:     now,
+    added_by:     body.uuid,
+    notes:        body.relationship || null
   });
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok', agentId };
 }
 
 async function _removeAgent(body) {
+  const now = new Date().toISOString();
   const { error } = await sb.from('pickup_agents')
-    .update({ status: 'inactive' })
+    .update({ status: 'inactive', deactivated_at: now, deactivated_by: body.uuid })
     .eq('agent_id', body.agentId);
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok' };
