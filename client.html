@@ -1705,12 +1705,6 @@ async function rcSubmit(planCardId) {
     const typeEl = document.getElementById('rc-type-' + i);
     const isIndividual = !typeEl || typeEl.value === 'individual';
 
-    if (i === 0 && !name) {
-      toast('Please enter at least one recipient name.', 'error');
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
-      nameEl.focus();
-      return;
-    }
     if (!name) continue;
 
     // For individuals, require at least two words (first + last name)
@@ -1730,8 +1724,13 @@ async function rcSubmit(planCardId) {
   }
 
   if (recipients.length === 0) {
-    toast('Please add at least one recipient name.', 'error');
+    toast('Please enter at least one recipient name.', 'error');
     if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+    // Focus the first visible name field
+    for (let i = 0; i < window._rcMaxR; i++) {
+      const el = document.getElementById('rc-name-' + i);
+      if (el) { el.focus(); break; }
+    }
     return;
   }
 
@@ -1754,6 +1753,16 @@ async function rcSubmit(planCardId) {
     if (activeSub) {
       activeSub.setupRequired = false;
       activeSub.setupStep = null;
+      activeSub.banner = null;
+      activeSub.planCardId = planCardId;
+    }
+    // Also update in allSubs array
+    const subInAll = (STATE.allSubs || []).find(s => s.subscriptionId === activeSub?.subscriptionId);
+    if (subInAll) {
+      subInAll.setupRequired = false;
+      subInAll.setupStep = null;
+      subInAll.banner = null;
+      subInAll.planCardId = planCardId;
     }
     clearCachedAuth(STATE.uuid);
     renderOnboardingSuccess(planCardId);
