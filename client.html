@@ -2319,7 +2319,31 @@ function buildPlanCard(sub, access, pc, recipients) {
       </div>
     </div>`;
 
-  const planHtml = planHeaderHtml + statsHtml + fwdHtml + recsHtml + buildAgentsSection(sub, pc);
+  const bizDesc = pc ? (pc.businessDescription || '') : '';
+  const bizDescHtml = `
+    <div class="card" style="padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em">🏢 Business Description</div>
+        <button onclick="toggleBizDescEdit('${safePcId}')" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;font-weight:500" id="biz-edit-btn-${safePcId}">Edit</button>
+      </div>
+      <div id="biz-display-${safePcId}">
+        ${bizDesc
+          ? '<div style="font-size:13px;color:var(--ink-2)">' + bizDesc.replace(/</g,'&lt;') + '</div>'
+          : '<div style="font-size:12px;color:var(--ink-4)">No description set. Click Edit to add one.</div>'}
+      </div>
+      <div id="biz-form-${safePcId}" style="display:none">
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Describe your business in one sentence</label>
+          <input type="text" id="biz-desc-input-${safePcId}" value="${bizDesc.replace(/"/g,'&quot;')}" placeholder="e.g. Online retail store selling handmade jewelry">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="saveBizDesc('${safePcId}')">Save</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleBizDescEdit('${safePcId}')">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+
+  const planHtml = planHeaderHtml + statsHtml + fwdHtml + bizDescHtml + recsHtml + buildAgentsSection(sub, pc);
 
   const plansArea = qs('plans-area');
   if (plansArea) {
@@ -2461,6 +2485,44 @@ async function saveFwdAddress(safePcId) {
   } catch(e) {
     toast('Error: ' + e.message, 'error');
   }
+}
+
+function toggleBizDescEdit(safePcId) {
+  const display = qs('biz-display-' + safePcId);
+  const form = qs('biz-form-' + safePcId);
+  const btn = qs('biz-edit-btn-' + safePcId);
+  if (!display || !form) return;
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : 'block';
+  display.style.display = showing ? 'block' : 'none';
+  if (btn) btn.textContent = showing ? 'Edit' : 'Cancel';
+}
+
+async function saveBizDesc(safePcId) {
+  const planCardId = decodeURIComponent(safePcId);
+  const desc = (document.getElementById('biz-desc-input-' + safePcId)?.value || '').trim();
+  if (!desc) { toast('Please enter a business description.', 'error'); return; }
+  try {
+    const result = await apiPost({
+      action: 'updateBusinessDescription',
+      uuid: STATE.uuid,
+      planCardId,
+      businessDescription: desc
+    });
+    if (result.status === 'ok') {
+      toast('Business description updated!', 'success');
+      const sub = STATE.activeSub;
+      if (sub) {
+        const pcData = await apiPost({ action: 'getPlanCard', uuid: STATE.uuid, subscriptionId: sub.subscriptionId });
+        if (pcData.status === 'ok' && pcData.planCard) {
+          STATE.planCard = pcData.planCard;
+          if (STATE.allPlanCards) STATE.allPlanCards[sub.subscriptionId] = pcData.planCard;
+        }
+        const recData = await apiPost({ action: 'getRecipients', uuid: STATE.uuid, subscriptionId: sub.subscriptionId });
+        buildPlanCard(sub, sub, STATE.planCard, recData.recipients || []);
+      }
+    } else { toast(result.message || 'Error updating description', 'error'); }
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 function arCheckName(safeId) {
