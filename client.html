@@ -2233,7 +2233,7 @@ function buildPlanCard(sub, access, pc, recipients) {
       </div>
     </div>`;
 
-  const planHtml = planHeaderHtml + statsHtml + fwdHtml + recsHtml;
+  const planHtml = planHeaderHtml + statsHtml + fwdHtml + recsHtml + buildAgentsSection(sub, pc);
 
   const plansArea = qs('plans-area');
   if (plansArea) {
@@ -2331,6 +2331,151 @@ function copyAddress(safeId) {
       if (icon) icon.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy';
     }, 2000);
   }).catch(() => toast('Copy failed', 'error'));
+}
+
+// ── buildAgentsSection ────────────────────────────────────
+function buildAgentsSection(sub, pc) {
+  const agents = STATE.agents || [];
+  const safeId = (sub.subscriptionId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const planCardId = pc ? pc.planCardId : '';
+
+  // Banner for first-time setup
+  const noBanner = agents.length === 0 ? `
+    <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">
+      <div style="font-size:18px;flex-shrink:0;margin-top:1px">🪪</div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#5D4037;margin-bottom:3px">No pickup agents registered</div>
+        <div style="font-size:12px;color:#795548;line-height:1.5">Register anyone authorized to pick up mail on your behalf. You (the account holder) can always pick up your own mail — this is for additional people like assistants, employees, or family members.</div>
+      </div>
+    </div>` : '';
+
+  // Agent list
+  const agentItems = agents.map(a => {
+    const initials = (a.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    const relLabel = a.relationship ? ` · ${a.relationship}` : '';
+    const idLabel  = a.idType ? ` · ID: ${a.idType}` : '';
+    return `
+      <div class="recipient-item" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="width:32px;height:32px;border-radius:50%;background:#E3F2FD;color:#1565C0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials}</div>
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:600;color:var(--ink)">${a.name}</div>
+            <div style="font-size:11px;color:var(--ink-4)">${a.idType || 'No ID type specified'}${relLabel}</div>
+          </div>
+        </div>
+        <button onclick="removeAgent('${a.agentId}','${sub.subscriptionId}')"
+          style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-4);padding:4px 8px;border-radius:4px;transition:all .15s;flex-shrink:0"
+          onmouseover="this.style.color='var(--red)';this.style.background='#FFF0F0'" onmouseout="this.style.color='var(--ink-4)';this.style.background='none'">
+          ✕ Remove
+        </button>
+      </div>`;
+  }).join('');
+
+  // Add agent form
+  const addForm = `
+    <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">Register New Agent</div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Full Name <span style="color:var(--red)">*</span></label>
+          <input type="text" id="agt-name-${safeId}" placeholder="e.g. John Assistant">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Relationship</label>
+          <select id="agt-rel-${safeId}">
+            <option value="">Select...</option>
+            <option value="Employee">Employee</option>
+            <option value="Assistant">Assistant</option>
+            <option value="Family Member">Family Member</option>
+            <option value="Business Partner">Business Partner</option>
+            <option value="Authorized Agent">Authorized Agent</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Government ID Type</label>
+          <select id="agt-id-${safeId}">
+            <option value="">Select...</option>
+            <option value="Driver's License">Driver's License</option>
+            <option value="Passport">Passport</option>
+            <option value="PR Card">PR Card</option>
+            <option value="Provincial ID">Provincial ID</option>
+            <option value="Other Photo ID">Other Photo ID</option>
+          </select>
+        </div>
+      </div>
+      <button id="agt-btn-${safeId}" onclick="addAgent('${planCardId}','${sub.subscriptionId}','${safeId}')"
+        class="btn btn-full"
+        style="background:none;border:1px solid var(--border);color:var(--ink-3);font-size:12px;padding:10px;cursor:pointer;font-family:inherit;transition:all .15s;border-radius:var(--radius-sm)"
+        onmouseover="this.style.borderColor='var(--ink-3)';this.style.color='var(--ink)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--ink-3)'">
+        + Register Agent
+      </button>
+    </div>`;
+
+  return `
+    <div style="margin-bottom:16px">
+      <div class="section-header">
+        <span class="section-title">Authorized Pickup Agents <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">${agents.length}</span></span>
+      </div>
+      ${noBanner}
+      <div class="card" style="padding:8px 16px 4px">
+        ${agentItems ? `<div class="recipient-list">${agentItems}</div>` : ''}
+        ${addForm}
+        <div style="padding-bottom:12px"></div>
+      </div>
+    </div>`;
+}
+
+async function addAgent(planCardId, subscriptionId, safeId) {
+  const nameEl = document.getElementById('agt-name-' + safeId);
+  const relEl  = document.getElementById('agt-rel-' + safeId);
+  const idEl   = document.getElementById('agt-id-' + safeId);
+  const btnEl  = document.getElementById('agt-btn-' + safeId);
+
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { toast('Please enter the agent\'s full name.', 'error'); if (nameEl) nameEl.focus(); return; }
+  if (name.split(/\s+/).filter(Boolean).length < 2) { toast('Please enter both first and last name.', 'error'); if (nameEl) nameEl.focus(); return; }
+
+  if (btnEl) { btnEl.disabled = true; btnEl.innerHTML = '<span class="btn-spinner"></span> Registering...'; }
+
+  try {
+    const result = await apiPost({
+      action:       'addAgent',
+      uuid:         STATE.uuid,
+      planCardId:   planCardId,
+      name:         name,
+      relationship: relEl ? relEl.value : '',
+      idType:       idEl ? idEl.value : ''
+    });
+    if (result.status !== 'ok') throw new Error(result.message || 'Failed');
+    toast('Agent registered!', 'success');
+    // Refresh agents
+    const aRes = await apiPost({ action:'getAgents', uuid:STATE.uuid, subscriptionId });
+    if (aRes.status === 'ok') STATE.agents = aRes.agents || [];
+    const sub = (STATE.allSubs||[]).find(s=>s.subscriptionId===subscriptionId) || STATE.activeSub;
+    const pc = STATE.allPlanCards ? STATE.allPlanCards[subscriptionId] : STATE.planCard;
+    buildPlanCard(sub, STATE.access, pc, STATE.recipients);
+  } catch(err) {
+    toast(err.message, 'error');
+    if (btnEl) { btnEl.disabled = false; btnEl.innerHTML = '+ Register Agent'; }
+  }
+}
+
+async function removeAgent(agentId, subscriptionId) {
+  if (!confirm('Remove this pickup agent?')) return;
+  try {
+    const result = await apiPost({ action:'removeAgent', uuid:STATE.uuid, agentId });
+    if (result.status !== 'ok') throw new Error(result.message || 'Failed');
+    toast('Agent removed.', 'success');
+    // Refresh agents
+    const aRes = await apiPost({ action:'getAgents', uuid:STATE.uuid, subscriptionId });
+    if (aRes.status === 'ok') STATE.agents = aRes.agents || [];
+    const sub = (STATE.allSubs||[]).find(s=>s.subscriptionId===subscriptionId) || STATE.activeSub;
+    const pc = STATE.allPlanCards ? STATE.allPlanCards[subscriptionId] : STATE.planCard;
+    buildPlanCard(sub, STATE.access, pc, STATE.recipients);
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 // ── buildMailLog ──────────────────────────────────────────
