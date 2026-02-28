@@ -190,6 +190,7 @@ async function _resolveAccess(uuid) {
       setupRequired,
       setupStep,
       planCardId:     pc ? pc.plan_card_id : null,
+      friendlyName:   pc ? pc.friendly_name : null,
       banner
     };
   });
