@@ -1696,8 +1696,10 @@ async function rcSubmit(planCardId) {
   const btn = document.getElementById('rc-submit');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="btn-spinner"></span> Saving...'; }
 
-  // Collect filled slots (only slots still in DOM)
+  // Collect filled slots (only slots still in DOM) — no gaps allowed
   const recipients = [];
+  let foundGap = false;
+  let gapIndex = -1;
   for (let i = 0; i < window._rcMaxR; i++) {
     const nameEl = document.getElementById('rc-name-' + i);
     if (!nameEl) continue;
@@ -1705,7 +1707,20 @@ async function rcSubmit(planCardId) {
     const typeEl = document.getElementById('rc-type-' + i);
     const isIndividual = !typeEl || typeEl.value === 'individual';
 
-    if (!name) continue;
+    if (!name) {
+      foundGap = true;
+      if (gapIndex === -1) gapIndex = i;
+      continue;
+    }
+
+    // If there's a filled slot after a gap, block submission
+    if (foundGap) {
+      toast('Please fill in Recipient ' + (gapIndex + 1) + ' before adding more.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Save Recipients & Continue'; }
+      const gapEl = document.getElementById('rc-name-' + gapIndex);
+      if (gapEl) gapEl.focus();
+      return;
+    }
 
     // For individuals, require at least two words (first + last name)
     if (isIndividual && name.split(/\s+/).filter(Boolean).length < 2) {
