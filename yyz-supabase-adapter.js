@@ -162,9 +162,9 @@ async function _resolveAccess(uuid) {
     // Determine banner
     let banner = null;
     if (accessStatus === 'PAYMENT_REQUIRED') {
-      banner = { type: 'payment_required', title: 'Payment Required',
-        message: 'Your payment could not be processed. Please update your payment method.',
-        actionLabel: 'Update Payment', actionUrl: 'https://dashboard.assembly.com' };
+      banner = { type: 'payment_required', title: 'Payment Needed',
+        message: 'Please complete your payment to set up and access your plan.',
+        actionLabel: 'Make Payment', actionUrl: 'https://dashboard.assembly.com' };
     } else if (accessStatus === 'CANCELED_WITH_ACCESS') {
       const until = s.access_until_date ? new Date(s.access_until_date).toLocaleDateString('en-CA', { month:'short', day:'numeric', year:'numeric' }) : '';
       banner = { type: 'canceled_with_access', title: 'Subscription Ending',
