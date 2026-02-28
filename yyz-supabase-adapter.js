@@ -502,9 +502,19 @@ async function _searchRecipients(uuid, q) {
   const locId = staff?.default_location_id;
 
   const { data } = await sb.from('recipients')
-    .select('*, plan_cards!inner(plan_card_id, client_id, subscription_id, plan_name, auto_feature, status)')
+    .select('*, plan_cards!inner(plan_card_id, client_id, subscription_id, plan_name, auto_feature, status, friendly_name)')
     .eq('location_id', locId)
     .in('status', ['active', 'inactive']);
+
+  // Batch fetch client names
+  const clientIds = [...new Set((data || []).map(r => r.plan_cards?.client_id).filter(Boolean))];
+  const clientMap = {};
+  if (clientIds.length) {
+    const { data: clients } = await sb.from('clients').select('id, given_name, family_name').in('id', clientIds);
+    for (const c of (clients || [])) {
+      clientMap[c.id] = [c.given_name, c.family_name].filter(Boolean).join(' ');
+    }
+  }
 
   // Also fetch subscription access_status for each
   const enriched = [];
@@ -523,8 +533,10 @@ async function _searchRecipients(uuid, q) {
       type:           r.type,
       planCardId:     pc?.plan_card_id,
       clientId:       pc?.client_id,
+      clientName:     clientMap[pc?.client_id] || '',
       subscriptionId: pc?.subscription_id,
       planName:       pc?.plan_name,
+      friendlyName:   pc?.friendly_name || null,
       autoFeature:    pc?.auto_feature,
       accessStatus,
       recipientStatus: r.status,
