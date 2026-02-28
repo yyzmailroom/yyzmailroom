@@ -2229,7 +2229,7 @@ function buildPlanCard(sub, access, pc, recipients) {
       <div style="font-size:11px;font-weight:600;color:var(--ink-4);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">Add Recipient</div>
       <div class="form-row" style="margin-bottom:12px">
         <div class="form-group" style="margin-bottom:0">
-          <label>Full Name <span style="color:var(--red)">*</span></label>
+          <label id="ar-name-label-${safeId}">Full Name <span style="color:var(--red)">*</span></label>
           <input type="text" id="ar-name-${safeId}" placeholder="e.g. Jane Smith" required
             oninput="arCheckName('${safeId}')">
           <div id="ar-name-hint-${safeId}" style="font-size:11px;color:var(--ink-4);margin-top:3px;display:none">Please enter both first and last name.</div>
@@ -2369,6 +2369,16 @@ function arCheckName(safeId) {
 }
 
 function arUpdateLabel(safeId) {
+  const typeEl  = document.getElementById('ar-type-' + safeId);
+  const labelEl = document.getElementById('ar-name-label-' + safeId);
+  const nameEl  = document.getElementById('ar-name-' + safeId);
+  const hintEl  = document.getElementById('ar-name-hint-' + safeId);
+  const isComp  = typeEl && typeEl.value === 'company';
+  if (labelEl) labelEl.innerHTML = isComp
+    ? 'Company Name / DBA <span style="color:var(--red)">*</span>'
+    : 'Full Name <span style="color:var(--red)">*</span>';
+  if (nameEl) nameEl.placeholder = isComp ? 'e.g. Acme Corp' : 'e.g. Jane Smith';
+  if (hintEl) hintEl.style.display = 'none';
   arCheckName(safeId);
 }
 
