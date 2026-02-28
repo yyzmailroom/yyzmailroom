@@ -1309,27 +1309,48 @@ function showRecipientResults(query, results) {
   if (!results) return;
   const q    = query.toLowerCase();
   const hits = (_recipientCache || []).filter(r =>
-    r.status !== 'inactive' &&   // skip inactive recipients in log form
     [r.name, r.companyName, r.planCardId, r.planName]
       .join(' ').toLowerCase().includes(q)
-  ).slice(0, 8);
+  ).slice(0, 10);
 
   if (!hits.length) {
     results.style.display = 'block';
     results.innerHTML = `<div class="recipient-result-item" style="color:var(--ink-4)">No matching recipients</div>`;
     return;
   }
+
+  // Sort: active first, then inactive
+  hits.sort((a, b) => {
+    if (a.recipientStatus === 'active' && b.recipientStatus !== 'active') return -1;
+    if (a.recipientStatus !== 'active' && b.recipientStatus === 'active') return 1;
+    return 0;
+  });
+
   results.style.display = 'block';
   results.innerHTML = hits.map(r => {
+    const isInactive = r.recipientStatus === 'inactive';
+    const isTemp = r.notes && r.notes.startsWith('TEMP:');
     const payload = JSON.stringify({
       recipientId: r.recipientId, name: r.name, companyName: r.companyName,
       planCardId: r.planCardId, clientId: r.clientId,
-      subscriptionId: r.subscriptionId, accessStatus: r.accessStatus
+      subscriptionId: r.subscriptionId, accessStatus: r.accessStatus,
+      notes: r.notes, locationId: r.locationId, status: r.recipientStatus
     }).replace(/"/g, '&quot;');
-    const statusColor = r.accessStatus === 'ACTIVE' ? 'var(--green)' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? 'var(--amber)' : r.accessStatus === 'PAYMENT_REQUIRED' ? 'var(--red)' : r.accessStatus === 'CANCELED' ? 'var(--ink-4)' : 'var(--ink-4)';
+    const statusColor = r.accessStatus === 'ACTIVE' ? 'var(--green)' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? 'var(--amber)' : r.accessStatus === 'PAYMENT_REQUIRED' ? 'var(--red)' : 'var(--ink-4)';
     const statusLabel = r.accessStatus === 'ACTIVE' ? '● Active' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? '● Access Until Period End' : r.accessStatus === 'PAYMENT_REQUIRED' ? '⛔ Payment Required' : r.accessStatus === 'CANCELED' ? '✕ Canceled' : r.accessStatus || 'Unknown';
+
+    const tempBadge = isTemp ? '<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2;margin-left:4px">TEMP</span>' : '';
+    const inactiveBadge = isInactive ? '<span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0;margin-left:4px">INACTIVE</span>' : '';
+
+    if (isInactive) {
+      return `<div class="recipient-result-item" style="opacity:0.45;cursor:not-allowed;pointer-events:none">
+        <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}${inactiveBadge}</div>
+        <div class="rri-sub" style="font-size:10px;color:#9E9E9E">Inactive — reactivate from Plan Cards to log mail</div>
+      </div>`;
+    }
+
     return `<div class="recipient-result-item" onclick="selectRecipient(${payload})">
-      <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}</div>
+      <div class="rri-name">${r.name}${r.companyName ? ' <span style="color:var(--ink-4);font-weight:400">· ' + r.companyName + '</span>' : ''}${tempBadge}</div>
       <div class="rri-sub" style="display:flex;gap:8px;align-items:center">
         <span>${r.planName || r.planCardId}</span>
         <span style="font-size:10px;font-weight:600;color:${statusColor}">${statusLabel}</span>
@@ -1350,6 +1371,8 @@ function selectRecipient(data) {
   const results = qs('recipient-results');
   if (results) results.style.display = 'none';
 
+  const isTemp = data.notes && data.notes.startsWith('TEMP:');
+
   const search = qs('log-recipient-search');
   if (search) search.value = data.name + (data.companyName ? ' — ' + data.companyName : '');
 
@@ -1358,7 +1381,8 @@ function selectRecipient(data) {
     box.style.display = 'block';
     const nameEl  = qs('sel-rec-name');
     const subEl   = qs('sel-rec-sub');
-    if (nameEl) nameEl.textContent = data.name + (data.companyName ? ' — ' + data.companyName : '');
+    if (nameEl) nameEl.innerHTML = data.name + (data.companyName ? ' — ' + data.companyName : '')
+      + (isTemp ? ' <span style="font-size:9px;font-weight:600;padding:1px 5px;border-radius:8px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2">TEMP</span>' : '');
     if (subEl)  subEl.textContent  = (data.planName || data.planCardId) + ' · ' + (data.clientId || '').slice(0,12) + '...';
 
     // Payment status warning
@@ -1399,6 +1423,13 @@ function selectRecipient(data) {
       box.appendChild(div);
     }
   }
+
+  // Auto-set location from recipient's plan card
+  const locInput = qs('log-location');
+  if (locInput && data.locationId) {
+    locInput.dataset.locationId = data.locationId;
+  }
+
   // Forwarding notice
   const fwdNotice = qs('forwarding-notice');
   if (fwdNotice) {
@@ -1425,6 +1456,14 @@ function clearRecipient() {
   if (box) box.style.display = 'none';
   const results = qs('recipient-results');
   if (results) results.style.display = 'none';
+  const locInput = qs('log-location');
+  if (locInput) delete locInput.dataset.locationId;
+  // Re-enable submit
+  const submitBtn = qs('log-submit-btn');
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.title = ''; }
+  // Hide forwarding notice
+  const fwdNotice = qs('forwarding-notice');
+  if (fwdNotice) fwdNotice.style.display = 'none';
 }
 
 // ── Submit log mail ───────────────────────────────────────
