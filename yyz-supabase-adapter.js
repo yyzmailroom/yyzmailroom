@@ -504,7 +504,7 @@ async function _searchRecipients(uuid, q) {
   const { data } = await sb.from('recipients')
     .select('*, plan_cards!inner(plan_card_id, client_id, subscription_id, plan_name, auto_feature, status)')
     .eq('location_id', locId)
-    .eq('status', 'active');
+    .in('status', ['active', 'inactive']);
 
   // Also fetch subscription access_status for each
   const enriched = [];
@@ -528,7 +528,9 @@ async function _searchRecipients(uuid, q) {
       autoFeature:    pc?.auto_feature,
       accessStatus,
       recipientStatus: r.status,
-      planStatus:      pc?.status
+      planStatus:      pc?.status,
+      notes:           r.notes || null,
+      locationId:      r.location_id || null
     });
   }
   return enriched; // Note: searchRecipients GAS returns array directly, not {status:'ok',...}
