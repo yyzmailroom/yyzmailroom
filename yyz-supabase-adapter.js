@@ -97,6 +97,8 @@ async function apiPost(body) {
     case 'addTempRecipient':      return _addTempRecipient(body);
     case 'updateRecipient':       return _updateRecipient(body);
     case 'updateRecipientStatus': return _updateRecipientStatus(body);
+    case 'togglePlanLock':        return _togglePlanLock(body);
+    case 'toggleAccountLock':     return _toggleAccountLock(body);
     case 'notifyNonPayment':      return { status: 'ok' }; // TODO: email notification
 
     default:
@@ -133,6 +135,15 @@ async function _resolveAccess(uuid) {
     return { status: 'blocked', message: 'Account not found or inactive.' };
   }
 
+  // Account-level lock
+  if (client.access_override === 'suspended') {
+    return {
+      status: 'blocked',
+      message: 'Your account has been temporarily suspended. Please contact our office for assistance.',
+      reason: client.override_reason || null
+    };
+  }
+
   // Get all subscriptions
   const { data: subs } = await sb.from('subscriptions').select('*')
     .eq('client_id', uuid).order('created_at', { ascending: false });
@@ -148,7 +159,8 @@ async function _resolveAccess(uuid) {
   const subscriptions = (subs || []).map(s => {
     const pc = planCardMap[s.id];
     const accessStatus = s.access_status || 'ACTIVE';
-    const canAccess = ['ACTIVE', 'CANCELED_WITH_ACCESS'].includes(accessStatus);
+    const planSuspended = pc && pc.access_override === 'suspended';
+    const canAccess = !planSuspended && ['ACTIVE', 'CANCELED_WITH_ACCESS'].includes(accessStatus);
     
     // Setup is required if: no plan card, OR plan card exists but no recipients added yet
     const needsPlanCard = !pc;
@@ -163,7 +175,10 @@ async function _resolveAccess(uuid) {
 
     // Determine banner
     let banner = null;
-    if (accessStatus === 'PAYMENT_REQUIRED') {
+    if (planSuspended) {
+      banner = { type: 'suspended', title: 'Plan Suspended',
+        message: 'This plan has been temporarily suspended. Please contact our office for assistance.' };
+    } else if (accessStatus === 'PAYMENT_REQUIRED') {
       banner = { type: 'payment_required', title: 'Payment Needed',
         message: 'Please complete your payment to set up and access your plan.',
         actionLabel: 'Make Payment', actionUrl: 'https://dashboard.assembly.com' };
@@ -664,7 +679,7 @@ async function _getPlanCardsStaff(uuid) {
   // Enrich each card with client info, subscription status, recipients
   const enriched = [];
   for (const pc of (cards || [])) {
-    const { data: client } = await sb.from('clients').select('given_name, family_name, email, fallback_color')
+    const { data: client } = await sb.from('clients').select('given_name, family_name, email, fallback_color, access_override')
       .eq('id', pc.client_id).maybeSingle();
     const { data: sub } = await sb.from('subscriptions').select('access_status, plan_name, plan_amount_formatted')
       .eq('id', pc.subscription_id).maybeSingle();
@@ -675,6 +690,7 @@ async function _getPlanCardsStaff(uuid) {
     card.clientName = client ? [client.given_name, client.family_name].filter(Boolean).join(' ') : '';
     card.clientEmail = client?.email || '';
     card.clientColor = client?.fallback_color || '';
+    card.clientAccessOverride = client?.access_override || null;
     card.accessStatus = sub?.access_status || 'ACTIVE';
     card.subscriptionPlanName = sub?.plan_name || '';
     card.planAmountFormatted = sub?.plan_amount_formatted || '';
@@ -949,4 +965,42 @@ async function _updateRecipientStatus(body) {
   }
 
   return { status: 'ok' };
+}
+
+async function _togglePlanLock(body) {
+  const { data: pc } = await sb.from('plan_cards').select('access_override')
+    .eq('plan_card_id', body.planCardId).maybeSingle();
+  if (!pc) return { status: 'error', message: 'Plan card not found' };
+
+  const now = new Date().toISOString();
+  const isSuspended = pc.access_override === 'suspended';
+  const updates = {
+    access_override: isSuspended ? null : 'suspended',
+    override_reason: isSuspended ? null : (body.reason || 'Manually suspended by staff'),
+    override_at:     isSuspended ? null : now,
+    override_by:     isSuspended ? null : body.uuid
+  };
+
+  const { error } = await sb.from('plan_cards').update(updates).eq('plan_card_id', body.planCardId);
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok', locked: !isSuspended };
+}
+
+async function _toggleAccountLock(body) {
+  const { data: client } = await sb.from('clients').select('access_override')
+    .eq('id', body.clientId).maybeSingle();
+  if (!client) return { status: 'error', message: 'Client not found' };
+
+  const now = new Date().toISOString();
+  const isSuspended = client.access_override === 'suspended';
+  const updates = {
+    access_override: isSuspended ? null : 'suspended',
+    override_reason: isSuspended ? null : (body.reason || 'Manually suspended by staff'),
+    override_at:     isSuspended ? null : now,
+    override_by:     isSuspended ? null : body.uuid
+  };
+
+  const { error } = await sb.from('clients').update(updates).eq('id', body.clientId);
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok', locked: !isSuspended };
 }
