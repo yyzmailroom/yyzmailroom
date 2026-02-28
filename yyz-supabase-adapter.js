@@ -51,6 +51,7 @@ async function api(path) {
     case 'getTasks':            return _getTasks(uuid);
     case 'searchRecipients':    return _searchRecipients(uuid, params.get('q') || '');
     case 'getMailLogStaff':     return _getMailLogStaff(uuid);
+    case 'getLogSuggestions':   return _getLogSuggestions(uuid);
     case 'getAgentsForPlanCard':return _getAgentsForPlanCard(uuid, params.get('planCardId'));
     case 'getExceptions':       return _getExceptions(uuid);
     case 'getPlanCardsStaff':   return _getPlanCardsStaff(uuid);
@@ -574,6 +575,39 @@ async function _getMailLogStaff(uuid) {
     enriched.push(row);
   }
   return { status: 'ok', mailLog: enriched };
+}
+
+async function _getLogSuggestions(uuid) {
+  const { data: staff } = await sb.from('staff').select('default_location_id')
+    .eq('staff_id', uuid).maybeSingle();
+  const locId = staff?.default_location_id;
+
+  // Get unique sender names and physical locations from recent logs
+  const { data } = await sb.from('mail_log')
+    .select('sender_name, physical_location')
+    .eq('location_id', locId).neq('status', 'deleted')
+    .order('logged_at', { ascending: false }).limit(500);
+
+  const senders = {};
+  const locations = {};
+  for (const m of (data || [])) {
+    if (m.sender_name && m.sender_name.trim()) {
+      const s = m.sender_name.trim();
+      senders[s] = (senders[s] || 0) + 1;
+    }
+    if (m.physical_location && m.physical_location.trim()) {
+      const l = m.physical_location.trim();
+      locations[l] = (locations[l] || 0) + 1;
+    }
+  }
+
+  // Sort by frequency, return top entries
+  const sortByFreq = obj => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+  return {
+    status: 'ok',
+    senders: sortByFreq(senders).slice(0, 50),
+    locations: sortByFreq(locations).slice(0, 20)
+  };
 }
 
 async function _getAgentsForPlanCard(uuid, planCardId) {
