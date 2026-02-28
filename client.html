@@ -2255,8 +2255,11 @@ function buildPlanCard(sub, access, pc, recipients) {
         + Add Recipient
       </button>
     </div>` : `
-    <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:14px;text-align:center;font-size:12px;color:var(--ink-4)">
-      Recipient limit reached (${maxR} / ${maxR})
+    <div style="border-top:1px solid var(--border);margin-top:4px;padding:14px 0 2px">
+      <div style="background:#F5F5F5;border-radius:var(--radius-sm);padding:12px 14px;display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:14px;flex-shrink:0">ℹ️</span>
+        <div style="font-size:12px;color:var(--ink-3);line-height:1.5">All ${maxR} recipient slots are in use. To make changes, contact our front desk to deactivate an existing recipient, or add another plan to your account for additional slots.</div>
+      </div>
     </div>`;
 
   const recsHtml = `
