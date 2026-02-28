@@ -2509,16 +2509,20 @@ function renderPlanCardsList(planCards) {
     const activeRec = recs.filter(r => r.status === 'active');
     const tempRec   = recs.filter(r => r.status === 'active' && r.notes && r.notes.startsWith('TEMP:'));
     const si        = statusInfo[pc.accessStatus] || statusInfo['UNKNOWN'];
-    const isActive  = pc.accessStatus === 'ACTIVE' || pc.accessStatus === 'CANCELED_WITH_ACCESS';
+    const planLocked    = pc.accessOverride === 'suspended';
+    const accountLocked = pc.clientAccessOverride === 'suspended';
+    const isActive  = !planLocked && !accountLocked && (pc.accessStatus === 'ACTIVE' || pc.accessStatus === 'CANCELED_WITH_ACCESS');
     const clientLabel = pc.clientName ? ` <span style="font-weight:400;color:var(--ink-3)">(${pc.clientName})</span>` : '';
+    const lockPill = planLocked ? '<span class="pill expired" style="font-size:10px">🔒 Plan Suspended</span>'
+      : accountLocked ? '<span class="pill expired" style="font-size:10px">🔒 Account Suspended</span>' : '';
 
     return `
-      <div class="pc-card" style="border-left:3px solid ${isActive ? 'var(--green)' : 'var(--red)'}">
+      <div class="pc-card" style="border-left:3px solid ${isActive ? 'var(--green)' : planLocked || accountLocked ? '#9E9E9E' : 'var(--red)'}">
         <div class="pc-card-header" id="pc-hdr-${i}" onclick="togglePcCard(${i})" style="cursor:pointer" title="Click to expand">
           <div style="flex:1;min-width:0">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
               <span style="font-size:13px;font-weight:600">${pc.planName||pc.planCardId}${clientLabel}</span>
-              <span class="pill ${si.cls}" style="font-size:10px">${si.icon} ${si.label}</span>
+              ${lockPill || `<span class="pill ${si.cls}" style="font-size:10px">${si.icon} ${si.label}</span>`}
             </div>
             <div style="font-size:11px;color:var(--ink-4);display:flex;gap:12px;flex-wrap:wrap">
               <span>${pc.planCardId}</span>
@@ -2531,6 +2535,23 @@ function renderPlanCardsList(planCards) {
         </div>
 
         <div id="pc-body-${i}" style="display:none" class="pc-card-body" data-pcid="${pc.planCardId}">
+
+          <!-- Lock Controls -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            <button class="btn btn-sm ${planLocked ? 'btn-primary' : 'btn-secondary'}"
+              onclick="togglePlanLock('${pc.planCardId}',${planLocked})"
+              style="${planLocked ? 'background:#D32F2F;border-color:#D32F2F;color:#fff' : ''}"
+              title="${planLocked ? 'Unlock this plan' : 'Suspend this plan'}">
+              ${planLocked ? '🔓 Unlock Plan' : '🔒 Suspend Plan'}
+            </button>
+            <button class="btn btn-sm ${accountLocked ? 'btn-primary' : 'btn-secondary'}"
+              onclick="toggleAccountLock('${pc.clientId}','${pc.clientName||''}',${accountLocked})"
+              style="${accountLocked ? 'background:#D32F2F;border-color:#D32F2F;color:#fff' : ''}"
+              title="${accountLocked ? 'Unlock entire account' : 'Suspend entire account'}">
+              ${accountLocked ? '🔓 Unlock Account' : '🔒 Suspend Account'}
+            </button>
+            ${planLocked && pc.overrideReason ? `<div style="font-size:11px;color:var(--ink-4);align-self:center">Reason: ${pc.overrideReason}</div>` : ''}
+          </div>
 
           <!-- Client Info -->
           <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:14px">
@@ -2830,6 +2851,44 @@ async function _setRecipientStatus(recipientId, status) {
       await loadPlanCardsView();
     } else throw new Error(result.message||'Failed');
   } catch(err) { toast(err.message,'error'); }
+}
+
+// ── Plan / Account Lock ──────────────────────────────────
+async function togglePlanLock(planCardId, isCurrentlyLocked) {
+  const action = isCurrentlyLocked ? 'unlock' : 'suspend';
+  let reason = '';
+  if (!isCurrentlyLocked) {
+    reason = prompt('Reason for suspending this plan (optional):');
+    if (reason === null) return; // cancelled
+  } else {
+    if (!confirm('Unlock this plan? The client will regain access immediately.')) return;
+  }
+  try {
+    const result = await apiPost({ action: 'togglePlanLock', uuid: STATE.uuid, planCardId, reason });
+    if (result.status === 'ok') {
+      toast(result.locked ? '🔒 Plan suspended' : '🔓 Plan unlocked', 'success');
+      await loadPlanCardsView();
+    } else throw new Error(result.message || 'Failed');
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function toggleAccountLock(clientId, clientName, isCurrentlyLocked) {
+  const action = isCurrentlyLocked ? 'unlock' : 'suspend';
+  let reason = '';
+  if (!isCurrentlyLocked) {
+    if (!confirm(`⚠️ Suspend entire account for ${clientName || clientId}?\n\nThis will block ALL plans under this client. Mail logging will continue but the client cannot access their portal.`)) return;
+    reason = prompt('Reason for suspending this account (optional):');
+    if (reason === null) return;
+  } else {
+    if (!confirm(`Unlock the entire account for ${clientName || clientId}? All plans will be accessible again.`)) return;
+  }
+  try {
+    const result = await apiPost({ action: 'toggleAccountLock', uuid: STATE.uuid, clientId, reason });
+    if (result.status === 'ok') {
+      toast(result.locked ? '🔒 Account suspended' : '🔓 Account unlocked', 'success');
+      await loadPlanCardsView();
+    } else throw new Error(result.message || 'Failed');
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 // ── Edit Mail Item ────────────────────────────────────────
