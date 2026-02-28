@@ -357,6 +357,8 @@ async function _addRecipient(body) {
 
   const recipientId = _genId('RCP');
   const now = new Date().toISOString();
+  // body.uuid may be a staff ID (e.g. "STF001") which isn't a valid UUID
+  const actorUuid = /^[0-9a-f]{8}-/i.test(body.uuid) ? body.uuid : null;
   const { error } = await sb.from('recipients').insert({
     recipient_id:   recipientId,
     plan_card_id:   planCardId,
@@ -367,11 +369,11 @@ async function _addRecipient(body) {
     type:           body.type || 'individual',
     status:         'active',
     activated_at:   now,
-    activated_by:   body.uuid,
+    activated_by:   actorUuid,
     has_mail_logged: false,
     language:       body.language || 'en',
     created_at:     now,
-    created_by:     body.uuid,
+    created_by:     actorUuid,
     notes:          body.notes || null
   });
   if (error) return { status: 'error', message: error.message };
@@ -382,7 +384,7 @@ async function _addRecipient(body) {
     // Activate plan card on first recipient added (completes setup)
     if (pc.recipients_added === 0) {
       updates.activated_at = now;
-      updates.activated_by = body.uuid;
+      updates.activated_by = actorUuid;
     }
     await sb.from('plan_cards').update(updates).eq('plan_card_id', planCardId);
 
