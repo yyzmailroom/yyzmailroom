@@ -2518,8 +2518,11 @@ function buildAgentsSection(sub, pc) {
         </div>
       </div>
     </div>` : `
-    <div style="border-top:1px solid var(--border);margin-top:4px;padding:12px 0 4px;text-align:center">
-      <div style="font-size:11px;color:var(--ink-4)">Maximum ${maxAgents} agents registered</div>
+    <div style="border-top:1px solid var(--border);margin-top:4px;padding:12px 0 4px">
+      <div style="background:#F5F5F5;border-radius:var(--radius-sm);padding:12px 14px;display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:14px;flex-shrink:0">ℹ️</span>
+        <div style="font-size:12px;color:var(--ink-3);line-height:1.5">All ${maxAgents} agent slots are in use. Deactivate an existing agent to register a new one. This limit applies across all plans on your account.</div>
+      </div>
     </div>`;
 
   return `
