@@ -902,6 +902,7 @@ function renderBanner(sub) {
     canceled_with_access:'warning',
     pending_payment:     'warning',
     payment_required:    'error',
+    suspended:           'error',
     canceled:            'error'
   }[b.type] || 'setup';
 
@@ -910,6 +911,7 @@ function renderBanner(sub) {
     canceled_with_access:'⏰',
     pending_payment:     '📬',
     payment_required:    '💳',
+    suspended:           '🔒',
     canceled:            '🔒'
   }[b.type] || 'ℹ️';
 
