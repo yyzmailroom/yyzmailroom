@@ -2335,15 +2335,17 @@ function copyAddress(safeId) {
 
 // ── buildAgentsSection ────────────────────────────────────
 function buildAgentsSection(sub, pc) {
-  const agents = STATE.agents || [];
+  const allAgents = STATE.agents || [];
+  const activeAgents = allAgents.filter(a => a.status === 'active');
+  const inactiveAgents = allAgents.filter(a => a.status === 'inactive');
   const safeId = 'agents_global';
   const maxAgents = 5;
-  const canAdd = agents.length < maxAgents;
+  const canAdd = activeAgents.length < maxAgents;
   const planCardId = pc ? pc.planCardId : '';
   const locationId = pc ? pc.locationId : '';
 
   // Banner for first-time setup
-  const noBanner = agents.length === 0 ? `
+  const noBanner = allAgents.length === 0 ? `
     <div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">
       <div style="font-size:18px;flex-shrink:0;margin-top:1px">🪪</div>
       <div>
@@ -2352,29 +2354,45 @@ function buildAgentsSection(sub, pc) {
       </div>
     </div>` : '';
 
-  // Agent list
+  // Agent row builder
   const idTypeLabels = { drivers_license: "Driver's License", passport: 'Passport', health_card: 'Health Card', other: 'Other ID' };
-  const agentItems = agents.map(a => {
+  function agentRow(a, idx) {
     const initials = (a.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
     const idLabel = a.idType ? (idTypeLabels[a.idType] || a.idType) : '';
     const id4 = a.idLast4 ? ` ····${a.idLast4}` : '';
     const details = [idLabel ? idLabel + id4 : '', a.phone, a.notes].filter(Boolean).join(' · ');
+    const isActive = a.status === 'active';
+    const avatarBg = isActive ? '#E3F2FD' : '#F5F5F5';
+    const avatarColor = isActive ? '#1565C0' : '#9E9E9E';
+    const nameStyle = isActive ? 'color:var(--ink)' : 'color:var(--ink-4)';
+    const toggleLabel = isActive ? 'Deactivate' : 'Activate';
+    const toggleColor = isActive ? 'var(--red)' : 'var(--green)';
+    const toggleBg = isActive ? '#FFF0F0' : '#E8F5EE';
+
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${agents.indexOf(a) > 0 ? 'border-top:1px solid var(--border);' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${idx > 0 ? 'border-top:1px solid var(--border);' : ''}">
         <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          <div style="width:32px;height:32px;border-radius:50%;background:#E3F2FD;color:#1565C0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials}</div>
+          <div style="width:32px;height:32px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;${!isActive ? 'opacity:0.6;' : ''}">${initials}</div>
           <div style="min-width:0">
-            <div style="font-size:13px;font-weight:600;color:var(--ink)">${a.name}</div>
+            <div style="font-size:13px;font-weight:600;${nameStyle};display:flex;align-items:center;gap:6px">
+              ${a.name}
+              ${!isActive ? '<span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0">Inactive</span>' : ''}
+            </div>
             <div style="font-size:11px;color:var(--ink-4)">${details || 'No details provided'}</div>
           </div>
         </div>
-        <button onclick="removeAgent('${a.agentId}')"
-          style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-4);padding:4px 8px;border-radius:4px;transition:all .15s;flex-shrink:0"
-          onmouseover="this.style.color='var(--red)';this.style.background='#FFF0F0'" onmouseout="this.style.color='var(--ink-4)';this.style.background='none'">
-          ✕ Remove
+        <button onclick="toggleAgent('${a.agentId}')"
+          style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-4);padding:4px 10px;border-radius:4px;transition:all .15s;flex-shrink:0;white-space:nowrap"
+          onmouseover="this.style.color='${toggleColor}';this.style.background='${toggleBg}'" onmouseout="this.style.color='var(--ink-4)';this.style.background='none'">
+          ${toggleLabel}
         </button>
       </div>`;
-  }).join('');
+  }
+
+  // Active agents first, then inactive
+  const activeItems = activeAgents.map((a, i) => agentRow(a, i)).join('');
+  const inactiveItems = inactiveAgents.map((a, i) => agentRow(a, activeAgents.length + i)).join('');
+  const agentItems = activeItems + inactiveItems;
 
   // Add agent form (hidden when at max) — compact inline design
   const addForm = canAdd ? `
@@ -2440,11 +2458,11 @@ function buildAgentsSection(sub, pc) {
   return `
     <div style="margin-bottom:16px">
       <div class="section-header">
-        <span class="section-title">Authorized Pickup Agents <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">${agents.length}</span></span>
+        <span class="section-title">Authorized Pickup Agents <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;color:var(--ink-4)">(${activeAgents.length}/${maxAgents})</span></span>
       </div>
       ${noBanner}
       <div class="card" style="padding:8px 16px 4px">
-        ${agentItems ? `<div class="recipient-list">${agentItems}</div>` : ''}
+        ${agentItems ? `<div>${agentItems}</div>` : ''}
         ${addForm}
         <div style="padding-bottom:12px"></div>
       </div>
@@ -2494,12 +2512,14 @@ async function addAgent(safeId, planCardId, locationId) {
   }
 }
 
-async function removeAgent(agentId) {
-  if (!confirm('Remove this pickup agent?')) return;
+async function toggleAgent(agentId) {
+  const agent = (STATE.agents || []).find(a => a.agentId === agentId);
+  const action = agent && agent.status === 'active' ? 'deactivate' : 'reactivate';
+  if (action === 'deactivate' && !confirm('Deactivate this pickup agent? They will no longer be able to pick up mail.')) return;
   try {
     const result = await apiPost({ action:'removeAgent', uuid:STATE.uuid, agentId });
     if (result.status !== 'ok') throw new Error(result.message || 'Failed');
-    toast('Agent removed.', 'success');
+    toast(action === 'deactivate' ? 'Agent deactivated.' : 'Agent reactivated!', 'success');
     await refreshAgents();
   } catch(err) { toast(err.message, 'error'); }
 }
