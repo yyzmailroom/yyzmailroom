@@ -2354,7 +2354,7 @@ function renderPlanCardsList(planCards) {
             <!-- Row 1: First name / Last name / Type -->
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
               <div>
-                <label style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">First Name *</label>
+                <label id="tmp-fname-label-${i}" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);display:block;margin-bottom:4px">First Name *</label>
                 <input type="text" id="tmp-fname-${i}" placeholder="Jane"
                   oninput="tmpCheckName(${i})"
                   style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-family:inherit;font-size:13px">
@@ -2491,12 +2491,13 @@ function tmpTypeChange(i) {
   const typeEl  = document.getElementById('tmp-type-'  + i);
   const lWrap   = document.getElementById('tmp-lname-wrap-' + i);
   const lEl     = document.getElementById('tmp-lname-' + i);
-  const fnLabel = document.querySelector('#add-temp-' + i + ' label');
+  const fLabel  = document.getElementById('tmp-fname-label-' + i);
   const isComp  = typeEl && typeEl.value === 'company';
   if (lWrap) lWrap.style.display = isComp ? 'none' : '';
   // Update first name label and placeholder
+  if (fLabel) fLabel.textContent = isComp ? 'Company Name / DBA *' : 'First Name *';
   const fEl = document.getElementById('tmp-fname-' + i);
-  if (fEl) fEl.placeholder = isComp ? 'Company name' : 'Jane';
+  if (fEl) fEl.placeholder = isComp ? 'e.g. Acme Corp' : 'Jane';
   // Clear last name if switching to company
   if (isComp && lEl) lEl.value = '';
 }
@@ -2526,6 +2527,10 @@ function tmpReset(i) {
   if (hintEl) hintEl.style.display = 'none';
   const lWrap = document.getElementById('tmp-lname-wrap-' + i);
   if (lWrap) lWrap.style.display = '';
+  const fLabel = document.getElementById('tmp-fname-label-' + i);
+  if (fLabel) fLabel.textContent = 'First Name *';
+  const fEl = document.getElementById('tmp-fname-' + i);
+  if (fEl) fEl.placeholder = 'Jane';
 }
 
 
