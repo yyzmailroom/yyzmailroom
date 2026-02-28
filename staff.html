@@ -1487,7 +1487,7 @@ function showRecipientResults(query, results) {
       planCardId: r.planCardId, clientId: r.clientId, clientName: r.clientName,
       subscriptionId: r.subscriptionId, accessStatus: r.accessStatus,
       notes: r.notes, locationId: r.locationId, status: r.recipientStatus,
-      friendlyName: r.friendlyName, planName: r.planName
+      friendlyName: r.friendlyName, planName: r.planName, autoFeature: r.autoFeature
     }).replace(/"/g, '&quot;');
     const statusColor = r.accessStatus === 'ACTIVE' ? 'var(--green)' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? 'var(--amber)' : r.accessStatus === 'PAYMENT_REQUIRED' ? 'var(--red)' : 'var(--ink-4)';
     const statusLabel = r.accessStatus === 'ACTIVE' ? '● Active' : r.accessStatus === 'CANCELED_WITH_ACCESS' ? '● Access Until Period End' : r.accessStatus === 'PAYMENT_REQUIRED' ? '⛔ Payment Required' : r.accessStatus === 'CANCELED' ? '✕ Canceled' : r.accessStatus || 'Unknown';
