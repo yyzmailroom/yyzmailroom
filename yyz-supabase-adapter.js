@@ -78,6 +78,8 @@ async function apiPost(body) {
     case 'submitOnboarding': return _submitOnboarding(body);
     case 'addRecipient':     return _addRecipient(body);
     case 'updateFriendlyName': return _updateFriendlyName(body);
+    case 'addAgent':         return _addAgent(body);
+    case 'removeAgent':      return _removeAgent(body);
 
     // ── Staff writes ──
     case 'logMail':               return _logMail(body);
@@ -401,6 +403,32 @@ async function _updateFriendlyName(body) {
   const { error } = await sb.from('plan_cards')
     .update({ friendly_name: body.friendlyName })
     .eq('plan_card_id', body.planCardId);
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok' };
+}
+
+async function _addAgent(body) {
+  const agentId = _genId('AGT');
+  const now = new Date().toISOString();
+  const { error } = await sb.from('pickup_agents').insert({
+    agent_id:     agentId,
+    plan_card_id: body.planCardId,
+    client_id:    body.uuid,
+    name:         body.name,
+    relationship: body.relationship || null,
+    id_type:      body.idType || null,
+    status:       'active',
+    created_at:   now,
+    created_by:   body.uuid
+  });
+  if (error) return { status: 'error', message: error.message };
+  return { status: 'ok', agentId };
+}
+
+async function _removeAgent(body) {
+  const { error } = await sb.from('pickup_agents')
+    .update({ status: 'inactive' })
+    .eq('agent_id', body.agentId);
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok' };
 }
