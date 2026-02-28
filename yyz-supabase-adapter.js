@@ -351,8 +351,16 @@ async function _addRecipient(body) {
   if (!pc) return { status: 'error', message: 'Plan card not found' };
 
   const isTemp = body.notes && body.notes.startsWith('TEMP:');
-  if (!isTemp && pc.recipients_added >= pc.max_recipients) {
-    return { status: 'error', message: `Maximum recipients reached (${pc.max_recipients})` };
+
+  if (!isTemp) {
+    // Count actual active non-temp recipients (source of truth)
+    const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
+      .eq('plan_card_id', planCardId).eq('status', 'active')
+      .not('notes', 'like', 'TEMP:%');
+    const activeCount = activeRecs ? activeRecs.length : 0;
+    if (activeCount >= pc.max_recipients) {
+      return { status: 'error', message: `Maximum active recipients reached (${pc.max_recipients}). Deactivate one first or add as a temporary recipient.` };
+    }
   }
 
   const recipientId = _genId('RCP');
@@ -379,7 +387,11 @@ async function _addRecipient(body) {
   if (error) return { status: 'error', message: error.message };
 
   if (!isTemp) {
-    const newCount = pc.recipients_added + 1;
+    // Sync recipients_added counter with actual active count
+    const { data: nowActive } = await sb.from('recipients').select('recipient_id')
+      .eq('plan_card_id', planCardId).eq('status', 'active')
+      .not('notes', 'like', 'TEMP:%');
+    const newCount = nowActive ? nowActive.length : (pc.recipients_added + 1);
     const updates = { recipients_added: newCount };
     // Activate plan card on first recipient added (completes setup)
     if (pc.recipients_added === 0) {
@@ -826,9 +838,43 @@ async function _updateRecipient(body) {
 }
 
 async function _updateRecipientStatus(body) {
+  // Get recipient details
+  const { data: rec } = await sb.from('recipients').select('plan_card_id, notes, status')
+    .eq('recipient_id', body.recipientId).maybeSingle();
+  if (!rec) return { status: 'error', message: 'Recipient not found' };
+
+  const isTemp = rec.notes && rec.notes.startsWith('TEMP:');
+  const isReactivating = rec.status !== 'active' && body.status === 'active';
+
+  // If reactivating a non-temp recipient, check max limit
+  if (isReactivating && !isTemp && rec.plan_card_id) {
+    const { data: pc } = await sb.from('plan_cards').select('max_recipients')
+      .eq('plan_card_id', rec.plan_card_id).maybeSingle();
+    if (pc) {
+      const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
+        .eq('plan_card_id', rec.plan_card_id).eq('status', 'active')
+        .not('notes', 'like', 'TEMP:%');
+      const activeCount = activeRecs ? activeRecs.length : 0;
+      if (activeCount >= pc.max_recipients) {
+        return { status: 'error', message: `Cannot reactivate — maximum active recipients reached (${pc.max_recipients}). Deactivate another first, or add as a temporary recipient.` };
+      }
+    }
+  }
+
   const { error } = await sb.from('recipients')
     .update({ status: body.status })
     .eq('recipient_id', body.recipientId);
   if (error) return { status: 'error', message: error.message };
+
+  // Sync recipients_added counter on plan card for non-temp recipients
+  if (!isTemp && rec.plan_card_id) {
+    const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
+      .eq('plan_card_id', rec.plan_card_id).eq('status', 'active')
+      .not('notes', 'like', 'TEMP:%');
+    const count = activeRecs ? activeRecs.length : 0;
+    await sb.from('plan_cards').update({ recipients_added: count })
+      .eq('plan_card_id', rec.plan_card_id);
+  }
+
   return { status: 'ok' };
 }
