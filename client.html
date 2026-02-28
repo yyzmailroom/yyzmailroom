@@ -1450,8 +1450,12 @@ async function renderOnboardingForm(sub, access, stepsHtml, backBtn = '') {
 
       if (result.status === 'ok') {
         toast('Plan set up successfully!', 'success');
+        // Update sub state to move to recipients step (no reload needed)
+        sub.setupStep = 'add_recipients';
+        sub.planCardId = result.planCardId;
         clearCachedAuth(STATE.uuid);
-        setTimeout(() => location.reload(), 800);
+        // Go directly to recipient setup
+        await renderSetup(sub, access);
       } else {
         throw new Error(result.message || 'Setup failed');
       }
