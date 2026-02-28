@@ -2031,9 +2031,12 @@ async function _doRefreshMailLog(sub) {
 
 // ── getPlanFriendlyName ───────────────────────────────────
 function getPlanFriendlyName(s) {
+  // First check loaded plan card data
   const pc = STATE.allPlanCards && STATE.allPlanCards[s.subscriptionId];
   const friendly = pc && pc.friendlyName ? pc.friendlyName.trim() : '';
   if (friendly && !friendly.startsWith('TEMP:')) return friendly;
+  // Fallback to friendlyName from resolveAccess (boot data)
+  if (s.friendlyName && !s.friendlyName.startsWith('TEMP:')) return s.friendlyName.trim();
   return (s.planName || '').split('–')[0].trim() || s.subscriptionId.slice(-8);
 }
 
