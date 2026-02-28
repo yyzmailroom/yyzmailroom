@@ -144,8 +144,17 @@ async function _resolveAccess(uuid) {
     const pc = planCardMap[s.id];
     const accessStatus = s.access_status || 'ACTIVE';
     const canAccess = ['ACTIVE', 'CANCELED_WITH_ACCESS'].includes(accessStatus);
-    const setupRequired = canAccess && !pc;
-    const setupStep = setupRequired ? 'plan_setup' : (pc && !pc.activated_at ? 'plan_setup' : null);
+    
+    // Setup is required if: no plan card, OR plan card exists but no recipients added yet
+    const needsPlanCard = !pc;
+    const needsRecipients = pc && pc.recipients_added === 0;
+    const setupRequired = canAccess && (needsPlanCard || needsRecipients);
+    
+    // Determine which setup step they're on
+    let setupStep = null;
+    if (setupRequired) {
+      setupStep = needsPlanCard ? 'plan_setup' : 'add_recipients';
+    }
 
     // Determine banner
     let banner = null;
@@ -177,7 +186,7 @@ async function _resolveAccess(uuid) {
       accessStatus,
       canAccess,
       setupRequired,
-      setupStep:      setupRequired ? (pc ? 'add_recipients' : 'plan_setup') : null,
+      setupStep,
       planCardId:     pc ? pc.plan_card_id : null,
       banner
     };
@@ -310,8 +319,8 @@ async function _submitOnboarding(body) {
     client_timezone:     body.clientTimezone || 'America/Toronto',
     business_description: body.businessDescription || null,
     referral_source:     body.referralSource || null,
-    activated_at:        now,
-    activated_by:        body.uuid,
+    activated_at:        null,
+    activated_by:        null,
     friendly_name:       body.friendlyName || null,
     auto_feature:        tmpl.auto_feature,
     product_id:          productId,
@@ -319,11 +328,6 @@ async function _submitOnboarding(body) {
     customer_type:       body.customerType || 'canadian'
   });
   if (error) return { status: 'error', message: error.message };
-
-  // Resolve pending_setup task
-  await sb.from('tasks')
-    .update({ status: 'resolved', resolved_at: now, resolution_note: 'Plan card setup completed' })
-    .eq('client_id', body.uuid).eq('type', 'pending_setup').eq('status', 'open');
 
   return { status: 'ok', planCardId };
 }
@@ -362,9 +366,21 @@ async function _addRecipient(body) {
   if (error) return { status: 'error', message: error.message };
 
   if (!isTemp) {
-    await sb.from('plan_cards')
-      .update({ recipients_added: pc.recipients_added + 1 })
-      .eq('plan_card_id', planCardId);
+    const newCount = pc.recipients_added + 1;
+    const updates = { recipients_added: newCount };
+    // Activate plan card on first recipient added (completes setup)
+    if (pc.recipients_added === 0) {
+      updates.activated_at = now;
+      updates.activated_by = body.uuid;
+    }
+    await sb.from('plan_cards').update(updates).eq('plan_card_id', planCardId);
+
+    // Resolve pending_setup task when first recipient added
+    if (pc.recipients_added === 0) {
+      await sb.from('tasks')
+        .update({ status: 'resolved', resolved_at: now, resolution_note: 'Recipients added, setup complete' })
+        .eq('client_id', pc.client_id).eq('type', 'pending_setup').eq('status', 'open');
+    }
   }
   return { status: 'ok', recipientId };
 }
