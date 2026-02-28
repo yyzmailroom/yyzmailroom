@@ -1025,7 +1025,14 @@ function renderTasksFull() {
 function renderLogForm(container) {
   container.innerHTML = `
     <div style="max-width:640px; margin:0 auto">
-      <div style="font-family:'DM Serif Display',serif; font-size:20px; margin-bottom:20px">Log Incoming Mail</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-family:'DM Serif Display',serif; font-size:20px">Log Incoming Mail</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span id="log-last-refreshed" style="font-size:11px;color:var(--ink-4)"></span>
+          <button id="log-refresh-btn" class="btn btn-secondary btn-sm" data-refresh-label="log-last-refreshed"
+            onclick="animRefresh('log-refresh-btn', async () => { _recipientCache = null; await warmRecipientCache(); })">↻ Refresh</button>
+        </div>
+      </div>
       <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
 
         <div class="form-divider">Recipient</div>
