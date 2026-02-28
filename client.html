@@ -2358,8 +2358,7 @@ function buildAgentsSection(sub, pc) {
     const initials = (a.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
     const idLabel = a.idType ? (idTypeLabels[a.idType] || a.idType) : '';
     const id4 = a.idLast4 ? ` ····${a.idLast4}` : '';
-    const rel = a.notes || '';
-    const details = [rel, idLabel ? idLabel + id4 : '', a.phone].filter(Boolean).join(' · ');
+    const details = [idLabel ? idLabel + id4 : '', a.phone, a.notes].filter(Boolean).join(' · ');
     return `
       <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${agents.indexOf(a) > 0 ? 'border-top:1px solid var(--border);' : ''}">
         <div style="display:flex;align-items:center;gap:10px;min-width:0">
@@ -2411,16 +2410,8 @@ function buildAgentsSection(sub, pc) {
       </div>
       <div class="form-row" style="margin-bottom:12px">
         <div class="form-group" style="margin-bottom:0">
-          <label>Relationship</label>
-          <select id="agt-rel-${safeId}">
-            <option value="">Select...</option>
-            <option value="Employee">Employee</option>
-            <option value="Assistant">Assistant</option>
-            <option value="Family Member">Family Member</option>
-            <option value="Business Partner">Business Partner</option>
-            <option value="Authorized Agent">Authorized Agent</option>
-            <option value="Other">Other</option>
-          </select>
+          <label>Notes <span style="color:var(--ink-4)">(optional)</span></label>
+          <input type="text" id="agt-notes-${safeId}" placeholder="e.g. Assistant, picks up Mondays">
         </div>
       </div>
       <button id="agt-btn-${safeId}" onclick="addAgent('${safeId}','${planCardId}','${locationId}')"
@@ -2459,7 +2450,7 @@ function agtCheckName(safeId) {
 async function addAgent(safeId, planCardId, locationId) {
   const nameEl  = document.getElementById('agt-name-' + safeId);
   const phoneEl = document.getElementById('agt-phone-' + safeId);
-  const relEl   = document.getElementById('agt-rel-' + safeId);
+  const notesEl = document.getElementById('agt-notes-' + safeId);
   const idEl    = document.getElementById('agt-id-' + safeId);
   const id4El   = document.getElementById('agt-id4-' + safeId);
   const btnEl   = document.getElementById('agt-btn-' + safeId);
@@ -2478,7 +2469,7 @@ async function addAgent(safeId, planCardId, locationId) {
       locationId:   locationId,
       name:         name,
       phone:        phoneEl ? phoneEl.value.trim() : '',
-      relationship: relEl ? relEl.value : '',
+      notes:        notesEl ? notesEl.value.trim() : '',
       idType:       idEl ? idEl.value : '',
       idLast4:      id4El ? id4El.value.trim() : ''
     });
