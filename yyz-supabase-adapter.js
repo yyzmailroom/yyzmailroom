@@ -356,7 +356,7 @@ async function _addRecipient(body) {
     // Count actual active non-temp recipients (source of truth)
     const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
       .eq('plan_card_id', planCardId).eq('status', 'active')
-      .not('notes', 'like', 'TEMP:%');
+      .or('notes.is.null,notes.not.like.TEMP:%');
     const activeCount = activeRecs ? activeRecs.length : 0;
     if (activeCount >= pc.max_recipients) {
       return { status: 'error', message: `Maximum active recipients reached (${pc.max_recipients}). Deactivate one first or add as a temporary recipient.` };
@@ -390,7 +390,7 @@ async function _addRecipient(body) {
     // Sync recipients_added counter with actual active count
     const { data: nowActive } = await sb.from('recipients').select('recipient_id')
       .eq('plan_card_id', planCardId).eq('status', 'active')
-      .not('notes', 'like', 'TEMP:%');
+      .or('notes.is.null,notes.not.like.TEMP:%');
     const newCount = nowActive ? nowActive.length : (pc.recipients_added + 1);
     const updates = { recipients_added: newCount };
     // Activate plan card on first recipient added (completes setup)
@@ -853,7 +853,7 @@ async function _updateRecipientStatus(body) {
     if (pc) {
       const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
         .eq('plan_card_id', rec.plan_card_id).eq('status', 'active')
-        .not('notes', 'like', 'TEMP:%');
+        .or('notes.is.null,notes.not.like.TEMP:%');
       const activeCount = activeRecs ? activeRecs.length : 0;
       if (activeCount >= pc.max_recipients) {
         return { status: 'error', message: `Cannot reactivate — maximum active recipients reached (${pc.max_recipients}). Deactivate another first, or add as a temporary recipient.` };
@@ -870,7 +870,7 @@ async function _updateRecipientStatus(body) {
   if (!isTemp && rec.plan_card_id) {
     const { data: activeRecs } = await sb.from('recipients').select('recipient_id')
       .eq('plan_card_id', rec.plan_card_id).eq('status', 'active')
-      .not('notes', 'like', 'TEMP:%');
+      .or('notes.is.null,notes.not.like.TEMP:%');
     const count = activeRecs ? activeRecs.length : 0;
     await sb.from('plan_cards').update({ recipients_added: count })
       .eq('plan_card_id', rec.plan_card_id);
