@@ -134,28 +134,50 @@
   .nav-btn svg { opacity: 0.45; flex-shrink: 0; transition: opacity 0.15s; }
   .nav-btn:hover svg, .nav-btn.active svg { opacity: 0.9; }
 
-  /* Log Mail — prominent pill CTA, sits right of nav group */
-  .nav-log-cta {
-    background: var(--red); color: var(--white) !important;
-    border: none; border-radius: 7px;
-    padding: 7px 15px; font-weight: 600; font-size: 12px;
-    margin-left: 6px;
-    box-shadow: 0 1px 4px rgba(139,26,26,0.3), 0 0 0 0 rgba(139,26,26,0);
-    transition: all 0.15s; font-family: inherit;
+  /* Mail toggle — sliding pill switch */
+  .mail-toggle {
+    display: flex; align-items: center;
+    background: var(--bg-2);
+    border-radius: 8px;
+    padding: 3px;
+    position: relative;
+    margin-left: 4px;
+  }
+  .mail-toggle-slider {
+    position: absolute;
+    height: calc(100% - 6px);
+    width: calc(50% - 3px);
+    top: 3px;
+    left: 3px;
+    border-radius: 6px;
+    transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .mail-toggle-slider.pos-left {
+    left: 3px;
+    background: var(--white);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .mail-toggle-slider.pos-right {
+    left: calc(50%);
+    background: var(--red);
+    box-shadow: 0 1px 4px rgba(139,26,26,0.3);
+  }
+  .mail-toggle-btn {
     display: inline-flex; align-items: center; gap: 5px;
-    cursor: pointer; white-space: nowrap;
+    padding: 6px 14px;
+    font-size: 12px; font-weight: 500; color: var(--ink-3);
+    cursor: pointer; transition: color 0.2s, font-weight 0.2s;
+    background: transparent; border: none; border-radius: 6px;
+    white-space: nowrap; font-family: inherit;
+    position: relative; z-index: 1;
   }
-  .nav-log-cta:hover {
-    background: var(--red-light) !important;
-    box-shadow: 0 2px 10px rgba(139,26,26,0.4);
-    transform: translateY(-1px);
-  }
-  .nav-log-cta.active {
-    background: #6B1414 !important;
-    box-shadow: 0 1px 3px rgba(139,26,26,0.2);
-    transform: none;
-  }
-  .nav-log-cta svg { opacity: 1 !important; }
+  .mail-toggle-btn svg { opacity: 0.45; flex-shrink: 0; transition: opacity 0.2s; }
+  .mail-toggle-btn.active { font-weight: 600; }
+  .mail-toggle-btn.active svg { opacity: 0.9; }
+  .mail-toggle-btn.active-maillog { color: var(--ink); }
+  .mail-toggle-btn.active-log { color: #fff; }
 
   /* ── Layout ─────────────────────────────────────────── */
   .workspace {
@@ -559,10 +581,6 @@
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           Tasks
         </button>
-        <button class="nav-btn" onclick="setView('maillog')" id="vbtn-maillog">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-          Mail Log
-        </button>
         <button class="nav-btn" onclick="setView('exceptions')" id="vbtn-exceptions">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Exceptions
@@ -573,10 +591,17 @@
         </button>
       </div>
 
-      <button class="nav-log-cta" onclick="setView('log')" id="vbtn-log">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        Log Mail
-      </button>
+      <div class="mail-toggle" id="mail-toggle">
+        <div class="mail-toggle-slider pos-left" id="mail-toggle-slider"></div>
+        <button class="mail-toggle-btn active active-maillog" onclick="setView('maillog')" id="vbtn-maillog">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          Mail Log
+        </button>
+        <button class="mail-toggle-btn" onclick="setView('log')" id="vbtn-log">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Log Mail
+        </button>
+      </div>
     </nav>
 
     <!-- Right: staff identity -->
@@ -719,10 +744,34 @@ async function loadTasks() {
 // ── View management ───────────────────────────────────────
 function setView(v) {
   STATE.view = v;
-  ['split','tasks','log','maillog','exceptions','plancards'].forEach(n => {
+  // Update main nav buttons
+  ['split','tasks','exceptions','plancards'].forEach(n => {
     const b = qs('vbtn-' + n);
     if (b) b.classList.toggle('active', n === v);
   });
+  // Update mail toggle slider
+  const slider = qs('mail-toggle-slider');
+  const btnMaillog = qs('vbtn-maillog');
+  const btnLog = qs('vbtn-log');
+  if (slider && btnMaillog && btnLog) {
+    const isMaillog = v === 'maillog';
+    const isLog = v === 'log';
+    // Reset both buttons
+    btnMaillog.classList.remove('active', 'active-maillog');
+    btnLog.classList.remove('active', 'active-log');
+    btnMaillog.style.color = '';
+    btnLog.style.color = '';
+    if (isMaillog) {
+      slider.className = 'mail-toggle-slider pos-left';
+      btnMaillog.classList.add('active', 'active-maillog');
+    } else if (isLog) {
+      slider.className = 'mail-toggle-slider pos-right';
+      btnLog.classList.add('active', 'active-log');
+    } else {
+      // Neither selected — keep last state but dim
+      slider.className = 'mail-toggle-slider pos-left';
+    }
+  }
   renderWorkspace();
 }
 
