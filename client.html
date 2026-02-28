@@ -2426,7 +2426,7 @@ async function saveFwdAddress(safePcId) {
   const instructions = (document.getElementById('fwd-instructions-' + safePcId)?.value || '').trim();
 
   if (!addr || !city || !prov || !postal) {
-    showToast('Please fill in address, city, province, and postal code.', 'error');
+    toast('Please fill in address, city, province, and postal code.', 'error');
     return;
   }
 
@@ -2443,7 +2443,7 @@ async function saveFwdAddress(safePcId) {
       forwardingInstructions: instructions
     });
     if (result.status === 'ok') {
-      showToast('Forwarding address updated!', 'success');
+      toast('Forwarding address updated!', 'success');
       // Refresh plan card data to show updated address
       const sub = STATE.activeSub;
       if (sub) {
@@ -2456,10 +2456,10 @@ async function saveFwdAddress(safePcId) {
         buildPlanCard(sub, sub, STATE.planCard, recData.recipients || []);
       }
     } else {
-      showToast(result.message || 'Error updating address', 'error');
+      toast(result.message || 'Error updating address', 'error');
     }
   } catch(e) {
-    showToast('Error: ' + e.message, 'error');
+    toast('Error: ' + e.message, 'error');
   }
 }
 
