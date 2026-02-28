@@ -2096,7 +2096,7 @@ function buildPlanCard(sub, access, pc, recipients) {
                 style="font-size:11px;padding:5px 8px;background:rgba(255,255,255,0.1);border:none;border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;color:rgba(255,255,255,0.6)">✕</button>
             </div>
             ${friendlyPlanName ? `<div style="font-size:12px;color:rgba(255,255,255,0.45);margin-bottom:4px">${officialPlanName}</div>` : ''}
-            <div style="font-size:12px;color:rgba(255,255,255,0.5)">${billing}${sub.planAmountFormatted ? ' · ' + sub.planAmountFormatted : ''}${pc && pc.currentPeriodEnd ? ' · Renews ' + new Date(pc.currentPeriodEnd + 'T00:00:00').toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}) : ''}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,0.5)">${billing}${sub.planAmountFormatted ? ' · ' + sub.planAmountFormatted : ''}${pc && pc.currentPeriodEnd ? ' · Renews ' + (() => { const d = new Date(pc.currentPeriodEnd + 'T00:00:00'); d.setDate(d.getDate() + 1); return d.toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'}); })() : ''}</div>
           </div>
           <span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;background:rgba(26,107,60,0.35);color:#6ee08a;border:1px solid rgba(110,224,138,0.25);white-space:nowrap;flex-shrink:0;margin-top:2px">${pc && pc.status === 'active' ? '● Active' : pc ? pc.status : 'Active'}</span>
         </div>
