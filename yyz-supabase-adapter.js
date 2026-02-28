@@ -238,7 +238,8 @@ async function _getPlanCard(uuid, subscriptionId) {
 
 async function _getAgents(uuid, subscriptionId) {
   const { data } = await sb.from('pickup_agents').select('*')
-    .eq('client_id', uuid).eq('status', 'active');
+    .eq('client_id', uuid).in('status', ['active', 'inactive'])
+    .order('added_at');
   return { status: 'ok', agents: rowsToCamel(data) };
 }
 
@@ -431,12 +432,35 @@ async function _addAgent(body) {
 }
 
 async function _removeAgent(body) {
+  // This now toggles between active/inactive
+  const { data: agent } = await sb.from('pickup_agents').select('status, client_id')
+    .eq('agent_id', body.agentId).maybeSingle();
+  if (!agent) return { status: 'error', message: 'Agent not found' };
+
   const now = new Date().toISOString();
-  const { error } = await sb.from('pickup_agents')
-    .update({ status: 'inactive', deactivated_at: now, deactivated_by: body.uuid })
-    .eq('agent_id', body.agentId);
+  const newStatus = agent.status === 'active' ? 'inactive' : 'active';
+
+  // If reactivating, check max 5 active
+  if (newStatus === 'active') {
+    const { data: activeAgents } = await sb.from('pickup_agents').select('agent_id')
+      .eq('client_id', agent.client_id).eq('status', 'active');
+    if (activeAgents && activeAgents.length >= 5) {
+      return { status: 'error', message: 'Maximum 5 active agents allowed. Deactivate one first.' };
+    }
+  }
+
+  const updates = { status: newStatus };
+  if (newStatus === 'inactive') {
+    updates.deactivated_at = now;
+    updates.deactivated_by = body.uuid;
+  } else {
+    updates.deactivated_at = null;
+    updates.deactivated_by = null;
+  }
+
+  const { error } = await sb.from('pickup_agents').update(updates).eq('agent_id', body.agentId);
   if (error) return { status: 'error', message: error.message };
-  return { status: 'ok' };
+  return { status: 'ok', newStatus };
 }
 
 // ============================================================
