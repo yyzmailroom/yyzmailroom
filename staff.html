@@ -375,6 +375,32 @@
   .rri-name { font-weight: 500; }
   .rri-sub  { font-size: 11px; color: var(--ink-4); margin-top: 1px; }
 
+  /* ── Suggest dropdowns & chips ─────────────────────── */
+  .suggest-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); box-shadow: var(--shadow-md);
+    z-index: 150; max-height: 160px; overflow-y: auto;
+  }
+  .suggest-item {
+    padding: 7px 12px; cursor: pointer; font-size: 12px;
+    border-bottom: 1px solid var(--border); transition: background 0.1s;
+  }
+  .suggest-item:hover { background: var(--bg); }
+  .suggest-item:last-child { border-bottom: none; }
+  .suggest-chips {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;
+  }
+  .suggest-chips .chip, .suggest-chips .qnote-chip {
+    font-size: 10px; padding: 3px 8px; border-radius: 12px;
+    cursor: pointer; transition: all 0.15s; font-family: inherit;
+    border: 1px solid var(--border); background: var(--white); color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .suggest-chips .chip:hover { background: var(--bg); border-color: var(--ink-3); color: var(--ink); }
+  .suggest-chips .qnote-chip { background: var(--bg); }
+  .suggest-chips .qnote-chip:hover { background: var(--white); border-color: var(--ink-3); color: var(--ink); }
+
   /* ── Buttons ────────────────────────────────────────── */
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1054,9 +1080,13 @@ function renderLogForm(container) {
         </div>
 
         <div class="form-divider">Mail Details</div>
-        <div class="form-group">
+        <div class="form-group" style="position:relative">
           <label>Sender Name <span style="color:var(--ink-4);text-transform:none">(shown to client)</span></label>
-          <input type="text" id="log-sender" placeholder="e.g. TD Bank, CRA, Amazon, John Smith...">
+          <input type="text" id="log-sender" placeholder="e.g. TD Bank, CRA, Amazon, John Smith..." autocomplete="off"
+            oninput="showSuggestions('log-sender','sender-suggest',_senderCache,this.value)"
+            onfocus="showSuggestions('log-sender','sender-suggest',_senderCache,this.value)">
+          <div id="sender-suggest" class="suggest-dropdown" style="display:none"></div>
+          <div id="sender-chips" class="suggest-chips"></div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -1071,9 +1101,13 @@ function renderLogForm(container) {
             </div>
             <input type="hidden" id="log-type" value="letter">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="position:relative">
             <label>Physical Location <span style="color:var(--ink-4);text-transform:none">(staff only)</span></label>
-            <input type="text" id="log-location" placeholder="e.g. Shelf A3, Bin 2">
+            <input type="text" id="log-location" placeholder="e.g. Shelf A3, Bin 2" autocomplete="off"
+              oninput="showSuggestions('log-location','location-suggest',_locationCache,this.value)"
+              onfocus="showSuggestions('log-location','location-suggest',_locationCache,this.value)">
+            <div id="location-suggest" class="suggest-dropdown" style="display:none"></div>
+            <div id="location-chips" class="suggest-chips"></div>
           </div>
         </div>
 
@@ -1091,10 +1125,28 @@ function renderLogForm(container) {
         <div class="form-group">
           <label>Note to Client <span style="color:var(--ink-4);text-transform:none">(visible to client)</span></label>
           <textarea id="log-note-client" placeholder="e.g. Looks like a bank statement, return address matches TD Bank..."></textarea>
+          <div class="suggest-chips" style="margin-top:4px">
+            <span class="qnote-chip" onclick="appendNote('log-note-client','You have new mail ready for pickup.')">📬 Ready for pickup</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Government / official correspondence received.')">🏛️ Government mail</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Looks like a financial statement or bank notice.')">🏦 Financial/Bank</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Package received — requires signature on pickup.')">✍️ Signature required</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Large or oversized item — please arrange pickup soon.')">📦 Oversized item</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Time-sensitive — please pick up at your earliest convenience.')">⏰ Time-sensitive</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-client','Multiple items received today.')">📋 Multiple items</span>
+          </div>
         </div>
         <div class="form-group">
           <label>Internal Note <span style="color:var(--ink-4);text-transform:none">(staff only)</span></label>
           <textarea id="log-note-internal" placeholder="Internal notes..."></textarea>
+          <div class="suggest-chips" style="margin-top:4px">
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Client notified via email.')">📧 Client notified</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Left voicemail for client.')">📞 Left voicemail</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Return to sender if not picked up within 30 days.')">↩️ RTS 30 days</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Client requested hold — do not forward.')">🚫 Hold, no forward</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Duplicate item — verify with previous entry.')">⚠️ Possible duplicate</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Damaged on arrival — documented.')">💔 Damaged</span>
+            <span class="qnote-chip" onclick="appendNote('log-note-internal','Requires manager review.')">👀 Manager review</span>
+          </div>
         </div>
 
         <div class="toggle-row" style="margin-bottom:14px">
@@ -1147,6 +1199,7 @@ function renderLogForm(container) {
     </div>`;
 
   qs('log-type').addEventListener('change', onMailTypeChange);
+  loadLogSuggestions();
 }
 
 function onConfidentialToggle() {
@@ -1248,6 +1301,65 @@ function toggleSpecial() {
   const wrap = qs('special-case-reason-wrap');
   if (wrap) wrap.style.display = tog.classList.contains('on') ? 'block' : 'none';
 }
+
+// ── Log suggestions (senders, locations) ─────────────────
+let _senderCache = [];
+let _locationCache = [];
+let _suggestionsLoaded = false;
+
+async function loadLogSuggestions() {
+  if (_suggestionsLoaded) return;
+  try {
+    const data = await api(`uuid=${STATE.uuid}&action=getLogSuggestions`);
+    _senderCache = data.senders || [];
+    _locationCache = data.locations || [];
+    _suggestionsLoaded = true;
+    renderChips('sender-chips', _senderCache.slice(0, 6), 'log-sender');
+    renderChips('location-chips', _locationCache.slice(0, 4), 'log-location');
+  } catch(e) { /* silent */ }
+}
+
+function renderChips(containerId, items, inputId) {
+  const el = qs(containerId);
+  if (!el || !items.length) return;
+  el.innerHTML = items.map(v =>
+    `<span class="chip" onclick="document.getElementById('${inputId}').value='${v.replace(/'/g,"\\'")}';hideSuggest('${inputId.replace('log-','')}-suggest')">${v}</span>`
+  ).join('');
+}
+
+function showSuggestions(inputId, dropdownId, cache, query) {
+  const dd = qs(dropdownId);
+  if (!dd) return;
+  const q = (query || '').toLowerCase();
+  if (!q || !cache.length) { dd.style.display = 'none'; return; }
+  const hits = cache.filter(v => v.toLowerCase().includes(q) && v.toLowerCase() !== q).slice(0, 6);
+  if (!hits.length) { dd.style.display = 'none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = hits.map(v =>
+    `<div class="suggest-item" onmousedown="document.getElementById('${inputId}').value='${v.replace(/'/g,"\\'")}';hideSuggest('${dropdownId}')">${v}</div>`
+  ).join('');
+}
+
+function hideSuggest(id) {
+  const el = qs(id);
+  if (el) el.style.display = 'none';
+}
+
+function appendNote(textareaId, text) {
+  const el = document.getElementById(textareaId);
+  if (!el) return;
+  const cur = el.value.trim();
+  el.value = cur ? cur + ' ' + text : text;
+  el.focus();
+}
+
+// Hide dropdowns on blur
+document.addEventListener('click', function(e) {
+  ['sender-suggest','location-suggest'].forEach(id => {
+    const dd = qs(id);
+    if (dd && !dd.contains(e.target)) dd.style.display = 'none';
+  });
+});
 
 // ── Recipient search ──────────────────────────────────────
 let _searchTimeout = null;
