@@ -424,7 +424,7 @@ async function _addAgent(body) {
     status:       'active',
     added_at:     now,
     added_by:     body.uuid,
-    notes:        body.relationship || null
+    notes:        body.notes || null
   });
   if (error) return { status: 'error', message: error.message };
   return { status: 'ok', agentId };
