@@ -1282,7 +1282,7 @@ async function warmRecipientCache() {
   if (_recipientCache && (now - _recipientCacheTime) < CACHE_TTL) return;
   try {
     const data = await api(`uuid=${STATE.uuid}&action=searchRecipients&q=`);
-    _recipientCache = data.recipients || [];
+    _recipientCache = Array.isArray(data) ? data : (data.recipients || []);
     _recipientCacheTime = now;
   } catch(e) { _recipientCache = _recipientCache || []; }
 }
