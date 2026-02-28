@@ -1302,9 +1302,14 @@ function onMailTypeChange() {
   // Block parcel selection on Economy plans (parcelLimit = 0)
   const pc = STATE.logPlanCard;
   if (isParcel && pc && (!pc.parcelLimit || parseInt(pc.parcelLimit) === 0)) {
-    // Switch back to letter
-    const letterRadio = document.getElementById('log-type-letter');
-    if (letterRadio) { letterRadio.checked = true; hidden.value = 'letter'; }
+    // Switch back to letter using the new toggle (set hidden directly to avoid loop)
+    const hidden = qs('log-type');
+    if (hidden) hidden.value = 'letter';
+    const slider = qs('mail-type-slider');
+    if (slider) slider.className = 'mail-type-slider';
+    const btnL = qs('mt-btn-letter'), btnP = qs('mt-btn-parcel');
+    if (btnL) btnL.classList.add('active');
+    if (btnP) btnP.classList.remove('active');
     if (pf) pf.style.display = 'none';
     if (oversizedRow) oversizedRow.style.display = 'none';
     toast('This plan does not include parcel handling — upgrade to log parcels.', 'error');
