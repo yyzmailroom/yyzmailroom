@@ -237,13 +237,8 @@ async function _getPlanCard(uuid, subscriptionId) {
 }
 
 async function _getAgents(uuid, subscriptionId) {
-  // Get plan card first to find planCardId
-  const { data: pc } = await sb.from('plan_cards').select('plan_card_id')
-    .eq('client_id', uuid).eq('subscription_id', subscriptionId).maybeSingle();
-  if (!pc) return { status: 'ok', agents: [] };
-
   const { data } = await sb.from('pickup_agents').select('*')
-    .eq('plan_card_id', pc.plan_card_id).eq('status', 'active');
+    .eq('client_id', uuid).eq('status', 'active');
   return { status: 'ok', agents: rowsToCamel(data) };
 }
 
@@ -408,11 +403,18 @@ async function _updateFriendlyName(body) {
 }
 
 async function _addAgent(body) {
+  // Check max 5 agents per client
+  const { data: existing } = await sb.from('pickup_agents').select('agent_id')
+    .eq('client_id', body.uuid).eq('status', 'active');
+  if (existing && existing.length >= 5) {
+    return { status: 'error', message: 'Maximum 5 pickup agents allowed.' };
+  }
+
   const agentId = _genId('AGT');
   const now = new Date().toISOString();
   const { error } = await sb.from('pickup_agents').insert({
     agent_id:     agentId,
-    plan_card_id: body.planCardId,
+    plan_card_id: body.planCardId || null,
     client_id:    body.uuid,
     location_id:  body.locationId || null,
     name:         body.name,
