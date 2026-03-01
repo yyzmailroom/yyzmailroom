@@ -478,6 +478,38 @@
   .inline-tog:hover { border-color: var(--ink-3); color: var(--ink); }
   .inline-tog.active { background: var(--amber-bg); border-color: #FFB300; color: #E65100; font-weight: 600; }
 
+  /* ── Mail mode 3-way toggle (Regular/Confidential/Special) */
+  .mail-mode-toggle {
+    display: inline-flex; align-items: center;
+    background: var(--bg-2); border-radius: 8px; padding: 3px;
+    position: relative;
+  }
+  .mail-mode-slider {
+    position: absolute; height: calc(100% - 6px); width: calc(33.333% - 2px);
+    top: 3px; left: 3px; border-radius: 6px;
+    background: var(--white); box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border-color 0.25s;
+    pointer-events: none; z-index: 0;
+    border: 1px solid transparent;
+  }
+  .mail-mode-slider.confidential {
+    left: calc(33.333% + 1px);
+    background: #FFF8E1; border-color: #FFB300;
+  }
+  .mail-mode-slider.special {
+    left: calc(66.666%);
+    background: #FFF3E0; border-color: #FF8F00;
+  }
+  .mail-mode-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 5px 12px; font-size: 11px; font-weight: 500;
+    color: var(--ink-3); cursor: pointer;
+    background: transparent; border: none; border-radius: 6px;
+    font-family: inherit; position: relative; z-index: 1;
+    transition: color 0.2s; white-space: nowrap;
+  }
+  .mail-mode-btn.active { font-weight: 600; color: var(--ink); }
+
   /* ── Buttons ────────────────────────────────────────── */
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1219,23 +1251,25 @@ function renderLogForm(container) {
       </div>
       <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
 
-        <div class="form-divider" id="recipient-divider">Recipient</div>
-        <div id="recipient-section">
-          <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-            <div class="form-group recipient-search-wrap" style="flex:1;min-width:180px;margin-bottom:0">
-              <input type="text" id="log-recipient-search" placeholder="Search recipient..." autocomplete="off"
-                oninput="searchRecipients(this.value)">
-              <div class="recipient-results" id="recipient-results" style="display:none"></div>
-            </div>
-            <div style="display:flex;gap:4px;flex-shrink:0;padding-bottom:1px">
-              <button type="button" class="inline-tog" id="tog-confidential-btn" onclick="onConfidentialToggle()" title="Blocks scan & forward">🔒 Confidential</button>
-              <button type="button" class="inline-tog" id="tog-special-btn" onclick="onSpecialCaseToggle()" title="No recipient needed">⚠️ Special</button>
-            </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="form-divider" id="recipient-divider" style="margin-bottom:0">Recipient</div>
+          <div class="mail-mode-toggle" id="mail-mode-toggle">
+            <div class="mail-mode-slider" id="mail-mode-slider"></div>
+            <button type="button" class="mail-mode-btn active" id="mm-btn-regular" onclick="setMailMode('regular')">✉️ Regular</button>
+            <button type="button" class="mail-mode-btn" id="mm-btn-confidential" onclick="setMailMode('confidential')">🔒 Confidential</button>
+            <button type="button" class="mail-mode-btn" id="mm-btn-special" onclick="setMailMode('special')">⚠️ Special</button>
           </div>
-          <!-- Hidden toggles for state tracking -->
-          <div style="display:none">
-            <div class="toggle" id="tog-confidential"></div>
-            <div class="toggle" id="tog-special"></div>
+        </div>
+        <!-- Hidden toggles for state tracking -->
+        <div style="display:none">
+          <div class="toggle" id="tog-confidential"></div>
+          <div class="toggle" id="tog-special"></div>
+        </div>
+        <div id="recipient-section">
+          <div class="form-group recipient-search-wrap">
+            <input type="text" id="log-recipient-search" placeholder="Search recipient..." autocomplete="off"
+              oninput="searchRecipients(this.value)">
+            <div class="recipient-results" id="recipient-results" style="display:none"></div>
           </div>
           <div id="selected-recipient-box" style="display:none; background:var(--bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:13px">
             <div style="font-weight:500" id="sel-rec-name"></div>
@@ -1391,11 +1425,9 @@ function renderLogForm(container) {
 }
 
 function onConfidentialToggle() {
+  // Called internally by setMailMode
   const tog = qs('tog-confidential');
-  tog.classList.toggle('on');
-  const isConf    = tog.classList.contains('on');
-  const btn = qs('tog-confidential-btn');
-  if (btn) btn.classList.toggle('active', isConf);
+  const isConf = tog.classList.contains('on');
   const scanField = qs('log-scan');
   const scanWrap  = qs('scan-field-wrap');
   if (scanField) { scanField.disabled = isConf; scanField.style.opacity = isConf ? '0.4' : '1'; if (isConf) scanField.value = ''; }
@@ -1408,26 +1440,20 @@ function onConfidentialToggle() {
 }
 
 function onSpecialCaseToggle() {
+  // Called internally by setMailMode
   const tog = qs('tog-special');
-  tog.classList.toggle('on');
   const isSpecial = tog.classList.contains('on');
-  const btn = qs('tog-special-btn');
-  if (btn) btn.classList.toggle('active', isSpecial);
 
-  // Recipient section — hide when special case
   const recSection   = qs('recipient-section');
-  const recDivider   = qs('recipient-divider');
   const specialNote  = qs('special-case-note');
   const nameWrap     = qs('special-case-name-wrap');
   const reasonWrap   = qs('special-case-reason-wrap');
 
   if (recSection)  recSection.style.display  = isSpecial ? 'none' : 'block';
-  if (recDivider)  recDivider.style.display  = isSpecial ? 'none' : 'block';
   if (specialNote) specialNote.style.display = 'none';
   if (nameWrap)    nameWrap.style.display    = isSpecial ? 'block' : 'none';
   if (reasonWrap)  reasonWrap.style.display  = isSpecial ? 'block' : 'none';
 
-  // Hide scan, note to client, confidential when special case
   const scanWrap    = qs('scan-field-wrap');
   const noteClient  = document.querySelector('#log-note-client')?.closest('.form-group');
   const confNotice  = qs('confidential-notice');
@@ -1437,11 +1463,37 @@ function onSpecialCaseToggle() {
   if (confNotice) confNotice.style.display = 'none';
   if (fwdNotice)  fwdNotice.style.display  = 'none';
 
-  // Also hide/show the confidential button
-  const confBtn = qs('tog-confidential-btn');
-  if (confBtn) confBtn.style.display = isSpecial ? 'none' : '';
-
   if (!isSpecial) clearRecipient();
+}
+
+let _currentMailMode = 'regular';
+
+function setMailMode(mode) {
+  _currentMailMode = mode;
+  const slider = qs('mail-mode-slider');
+  const btnR = qs('mm-btn-regular'), btnC = qs('mm-btn-confidential'), btnS = qs('mm-btn-special');
+  const togConf = qs('tog-confidential'), togSpec = qs('tog-special');
+
+  // Reset both toggles
+  if (togConf) togConf.classList.remove('on');
+  if (togSpec) togSpec.classList.remove('on');
+
+  // Update slider position
+  if (slider) slider.className = 'mail-mode-slider' + (mode === 'confidential' ? ' confidential' : mode === 'special' ? ' special' : '');
+
+  // Update button states
+  [btnR, btnC, btnS].forEach(b => b && b.classList.remove('active'));
+  if (mode === 'regular' && btnR) btnR.classList.add('active');
+  if (mode === 'confidential' && btnC) btnC.classList.add('active');
+  if (mode === 'special' && btnS) btnS.classList.add('active');
+
+  // Set the hidden toggle states
+  if (mode === 'confidential' && togConf) togConf.classList.add('on');
+  if (mode === 'special' && togSpec) togSpec.classList.add('on');
+
+  // Fire the toggle handlers
+  onConfidentialToggle();
+  onSpecialCaseToggle();
 }
 
 function setMailType(type) {
