@@ -610,6 +610,23 @@
     .header { padding: 0 16px; }
     .tabs { padding: 0 16px; overflow-x: auto; }
   }
+  /* ── In-app modal ────────────────────────────────────── */
+  .app-modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999; animation: fadeIn 0.15s ease;
+  }
+  @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+  .app-modal {
+    background: var(--white); border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18); padding: 24px;
+    max-width: 420px; width: 90%; animation: slideUp 0.2s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(12px); opacity:0 } to { transform: translateY(0); opacity:1 } }
+  .app-modal-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--ink); }
+  .app-modal-msg { font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-bottom: 16px; }
+  .app-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .app-modal .btn-danger { background: #D32F2F; border-color: #D32F2F; color: #fff; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="yyz-supabase-adapter.js"></script>
@@ -681,6 +698,27 @@ function safePcId(id) {
 
 // ── Utilities ────────────────────────────────────────────
 function qs(id) { return document.getElementById(id); }
+
+// ── In-app modal system ──────────────────────────────────
+function appConfirm({ title, message, confirmLabel, confirmClass, cancelLabel }) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'app-modal-overlay';
+    overlay.innerHTML = `<div class="app-modal">
+      <div class="app-modal-title">${title || 'Confirm'}</div>
+      <div class="app-modal-msg">${message || 'Are you sure?'}</div>
+      <div class="app-modal-actions">
+        <button class="btn btn-secondary btn-sm" id="amc-cancel">${cancelLabel || 'Cancel'}</button>
+        <button class="btn btn-sm ${confirmClass || 'btn-primary'}" id="amc-ok">${confirmLabel || 'Confirm'}</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#amc-ok').focus();
+    overlay.querySelector('#amc-ok').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#amc-cancel').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+  });
+}
 function getUUID() {
   const params = new URLSearchParams(window.location.search);
   return params.get('uuid') || params.get('id') || null;
@@ -2205,31 +2243,33 @@ function buildPlanCard(sub, access, pc, recipients) {
       </div>
     </div>` : '';
 
-  // ── Regular recipient rows ──
-  function _recRow(r) {
+  // ── Regular recipient rows (matching agent style) ──
+  function _recRow(r, idx) {
     const initials = (r.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
     const typeLabel = r.type === 'company' ? 'Company' : 'Individual';
     const langLabel = r.language === 'fr' ? 'FR' : 'EN';
     const isActive = r.status === 'active';
-    const avatarBg = isActive ? '' : 'background:#F5F5F5;color:#9E9E9E;opacity:0.7;';
-    const nameStyle = isActive ? '' : 'color:var(--ink-4);';
+    const avatarBg = isActive ? 'var(--red-dim)' : '#F5F5F5';
+    const avatarColor = isActive ? 'var(--red)' : '#9E9E9E';
+    const nameStyle = isActive ? 'color:var(--ink)' : 'color:var(--ink-4)';
+    const details = [typeLabel, langLabel].filter(Boolean).join(' · ');
     return `
-      <div class="recipient-item">
-        <div class="recipient-avatar" ${!isActive ? `style="${avatarBg}"` : ''}>${initials}</div>
-        <div class="recipient-info">
-          <div class="recipient-name" style="${nameStyle}display:flex;align-items:center;gap:6px">
-            ${r.name || '—'}
-            ${!isActive ? '<span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0">Inactive</span>' : ''}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${idx > 0 ? 'border-top:1px solid var(--border);' : ''}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <div style="width:32px;height:32px;border-radius:50%;background:${avatarBg};color:${avatarColor};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;${!isActive ? 'opacity:0.6;' : ''}">${initials}</div>
+          <div style="min-width:0">
+            <div style="font-size:13px;font-weight:600;${nameStyle};display:flex;align-items:center;gap:6px">
+              ${r.name || '—'}
+              ${!isActive ? '<span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#F5F5F5;color:#9E9E9E;border:1px solid #E0E0E0">Inactive</span>' : ''}
+            </div>
+            <div style="font-size:11px;color:var(--ink-4)">${details}</div>
           </div>
-          <div class="recipient-company">${typeLabel} · ${langLabel}</div>
         </div>
-        <div class="recipient-status">
-          ${isActive ? '<span class="pill scanned">Active</span>' : ''}
-        </div>
+        ${isActive ? '<span style="font-size:10px;font-weight:500;padding:2px 8px;border-radius:10px;background:#E8F5EE;color:#2E7D4F;border:1px solid #C8E6C9">Active</span>' : ''}
       </div>`;
   }
 
-  const regRecItemsHtml = _regRecs.length > 0 ? _regRecs.map(r => _recRow(r)).join('') : `
+  const regRecItemsHtml = _regRecs.length > 0 ? _regRecs.map((r, i) => _recRow(r, i)).join('') : `
     <div style="padding:24px 0;text-align:center;color:var(--ink-4)">
       <div style="font-size:22px;margin-bottom:6px">👤</div>
       <div style="font-size:13px">No recipients yet</div>
@@ -2248,21 +2288,20 @@ function buildPlanCard(sub, access, pc, recipients) {
         <div style="font-size:11px;color:var(--ink-4);margin-bottom:8px;line-height:1.5;padding:0 2px">
           Added by our staff to capture mail for names not on your regular recipient list.
         </div>
-        ${_tempRecs.map(r => {
+        ${_tempRecs.map((r, i) => {
           const initials = (r.name || '?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
           const note = r.notes ? r.notes.replace(/^TEMP:\s*/, '') : '';
           return `
-            <div class="recipient-item" style="opacity:0.8">
-              <div class="recipient-avatar" style="background:#FFF3E0;color:#E65100">${initials}</div>
-              <div class="recipient-info">
-                <div class="recipient-name" style="display:flex;align-items:center;gap:6px">
-                  ${r.name || '—'}
-                  <span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2">Temporary</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${i > 0 ? 'border-top:1px solid var(--border);' : ''}">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                <div style="width:32px;height:32px;border-radius:50%;background:#FFF3E0;color:#E65100;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${initials}</div>
+                <div style="min-width:0">
+                  <div style="font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px">
+                    ${r.name || '—'}
+                    <span style="font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2">Temporary</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--ink-4)">${note || 'Staff-added recipient'}</div>
                 </div>
-                <div class="recipient-company">${note || 'Staff-added recipient'}</div>
-              </div>
-              <div class="recipient-status">
-                ${r.status === 'active' ? '<span class="pill scanned">Active</span>' : '<span style="font-size:10px;color:#9E9E9E">Inactive</span>'}
               </div>
             </div>`;
         }).join('')}
@@ -2751,7 +2790,10 @@ async function addAgent(safeId, planCardId, locationId) {
 async function toggleAgent(agentId) {
   const agent = (STATE.agents || []).find(a => a.agentId === agentId);
   const action = agent && agent.status === 'active' ? 'deactivate' : 'reactivate';
-  if (action === 'deactivate' && !confirm('Deactivate this pickup agent? They will no longer be able to pick up mail.')) return;
+  if (action === 'deactivate') {
+    const ok = await appConfirm({ title: 'Deactivate Agent', message: `Deactivate <strong>${agent.name}</strong>? They will no longer be able to pick up mail on your behalf.`, confirmLabel: 'Deactivate', confirmClass: 'btn-danger' });
+    if (!ok) return;
+  }
   try {
     const result = await apiPost({ action:'removeAgent', uuid:STATE.uuid, agentId });
     if (result.status !== 'ok') throw new Error(result.message || 'Failed');
