@@ -77,9 +77,10 @@
     background: var(--white);
     border-bottom: 1px solid var(--border);
     padding: 0 20px;
-    height: 54px;
+    height: 54px; min-height: 54px;
     display: flex; align-items: center; justify-content: space-between;
     flex-shrink: 0; z-index: 100; gap: 16px;
+    position: relative;
   }
   .topbar-left { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
   .header-logo { display: flex; align-items: center; }
@@ -669,14 +670,24 @@
     .pane-left { width: 100%; border-right: none; }
     .workspace { flex-direction: column; }
   }
+
+  /* ── Mobile hamburger (default hidden, shown via media query) ── */
+  .mobile-hamburger {
+    display: none; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 8px;
+    background: none; border: 1px solid var(--border);
+    cursor: pointer; flex-shrink: 0;
+  }
+  .mobile-hamburger:hover { background: var(--bg); }
+
   @media (max-width: 860px) {
-    .topbar { padding: 0 12px; gap: 8px; height: 48px; }
+    .topbar { padding: 0 12px; gap: 8px; height: 48px; min-height: 48px; }
     .topbar-left .header-divider, .staff-badge { display: none; }
     .staff-name strong { display: none; }
     .staff-name .role-tag { display: none; }
-    .main-nav { display: none; }
+    .main-nav { display: none !important; }
     .topbar-left .header-logo img { height: 22px; }
-    .mobile-hamburger { display: flex; }
+    .mobile-hamburger { display: flex !important; }
     .mobile-nav {
       position: fixed; top: 48px; left: 0; right: 0; bottom: 0;
       background: rgba(0,0,0,0.4); z-index: 200;
@@ -703,20 +714,8 @@
     .mobile-nav-divider { height: 1px; background: var(--border); margin: 4px 8px; }
     .mail-mode-toggle { flex-wrap: nowrap; }
     .mail-mode-btn { padding: 5px 8px; font-size: 10px; }
-    .mail-type-toggle { }
     .mail-type-btn { padding: 6px 14px; font-size: 11px; }
   }
-  @media (min-width: 861px) {
-    .mobile-hamburger { display: none !important; }
-  }
-
-  .mobile-hamburger {
-    display: none; align-items: center; justify-content: center;
-    width: 36px; height: 36px; border-radius: 8px;
-    background: none; border: 1px solid var(--border);
-    cursor: pointer; flex-shrink: 0;
-  }
-  .mobile-hamburger:hover { background: var(--bg); }
 
   /* Refresh animation */
   @keyframes spin { to { transform: rotate(360deg); } }
