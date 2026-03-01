@@ -669,6 +669,54 @@
     .pane-left { width: 100%; border-right: none; }
     .workspace { flex-direction: column; }
   }
+  @media (max-width: 860px) {
+    .topbar { padding: 0 12px; gap: 8px; height: 48px; }
+    .topbar-left .header-divider, .staff-badge { display: none; }
+    .staff-name strong { display: none; }
+    .staff-name .role-tag { display: none; }
+    .main-nav { display: none; }
+    .topbar-left .header-logo img { height: 22px; }
+    .mobile-hamburger { display: flex; }
+    .mobile-nav {
+      position: fixed; top: 48px; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.4); z-index: 200;
+      animation: fadeIn 0.15s ease;
+    }
+    .mobile-nav-panel {
+      background: var(--white); border-bottom: 1px solid var(--border);
+      padding: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .mobile-nav-btn {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; font-size: 14px; font-weight: 500;
+      color: var(--ink-3); background: none; border: none;
+      border-radius: 8px; cursor: pointer; font-family: inherit;
+      width: 100%; text-align: left;
+    }
+    .mobile-nav-btn:hover, .mobile-nav-btn.active {
+      background: var(--bg); color: var(--ink);
+    }
+    .mobile-nav-btn.active { font-weight: 600; }
+    .mobile-nav-btn svg { opacity: 0.5; flex-shrink: 0; }
+    .mobile-nav-btn.active svg { opacity: 1; }
+    .mobile-nav-divider { height: 1px; background: var(--border); margin: 4px 8px; }
+    .mail-mode-toggle { flex-wrap: nowrap; }
+    .mail-mode-btn { padding: 5px 8px; font-size: 10px; }
+    .mail-type-toggle { }
+    .mail-type-btn { padding: 6px 14px; font-size: 11px; }
+  }
+  @media (min-width: 861px) {
+    .mobile-hamburger { display: none !important; }
+  }
+
+  .mobile-hamburger {
+    display: none; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 8px;
+    background: none; border: 1px solid var(--border);
+    cursor: pointer; flex-shrink: 0;
+  }
+  .mobile-hamburger:hover { background: var(--bg); }
 
   /* Refresh animation */
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -766,8 +814,13 @@
       </div>
     </nav>
 
-    <!-- Right: staff identity -->
-    <div class="staff-name" id="header-name"></div>
+    <!-- Right: staff identity + hamburger -->
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="staff-name" id="header-name"></div>
+      <button class="mobile-hamburger" id="mobile-menu-btn" onclick="toggleMobileNav()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
   </div>
 
   <div id="workspace" class="workspace"></div>
@@ -958,8 +1011,37 @@ async function loadTasks() {
 }
 
 // ── View management ───────────────────────────────────────
+// ── Mobile navigation ─────────────────────────────────────
+function toggleMobileNav() {
+  const existing = document.querySelector('.mobile-nav');
+  if (existing) { existing.remove(); return; }
+  const currentView = STATE.view;
+  const navItems = [
+    { id: 'split', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg>', label: 'Split View' },
+    { id: 'tasks', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>', label: 'Tasks' },
+    { id: 'exceptions', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>', label: 'Exceptions' },
+    { id: 'plancards', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>', label: 'Plan Cards' },
+    { id: '_divider' },
+    { id: 'maillog', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>', label: 'Mail Log' },
+    { id: 'log', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>', label: 'Log Mail' },
+  ];
+  const overlay = document.createElement('div');
+  overlay.className = 'mobile-nav';
+  overlay.innerHTML = `<div class="mobile-nav-panel">${navItems.map(n =>
+    n.id === '_divider' ? '<div class="mobile-nav-divider"></div>' :
+    `<button class="mobile-nav-btn ${currentView === n.id ? 'active' : ''}" onclick="setView('${n.id}')">${n.icon} ${n.label}</button>`
+  ).join('')}</div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeMobileNav(); });
+  document.body.appendChild(overlay);
+}
+function closeMobileNav() {
+  const nav = document.querySelector('.mobile-nav');
+  if (nav) nav.remove();
+}
+
 function setView(v) {
   STATE.view = v;
+  closeMobileNav();
   // Update main nav buttons
   ['split','tasks','exceptions','plancards'].forEach(n => {
     const b = qs('vbtn-' + n);
