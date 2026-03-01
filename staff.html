@@ -1251,7 +1251,7 @@ function renderLogForm(container) {
       </div>
       <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
           <div class="form-divider" id="recipient-divider" style="margin-bottom:0">Recipient</div>
           <div class="mail-mode-toggle" id="mail-mode-toggle">
             <div class="mail-mode-slider" id="mail-mode-slider"></div>
@@ -1260,6 +1260,7 @@ function renderLogForm(container) {
             <button type="button" class="mail-mode-btn" id="mm-btn-special" onclick="setMailMode('special')">⚠️ Special</button>
           </div>
         </div>
+        <div id="mail-mode-blurb" style="font-size:11px;color:var(--ink-4);margin-bottom:10px;line-height:1.4">Standard mail — search and select a recipient to log against.</div>
         <!-- Hidden toggles for state tracking -->
         <div style="display:none">
           <div class="toggle" id="tog-confidential"></div>
@@ -1473,6 +1474,8 @@ function setMailMode(mode) {
   const slider = qs('mail-mode-slider');
   const btnR = qs('mm-btn-regular'), btnC = qs('mm-btn-confidential'), btnS = qs('mm-btn-special');
   const togConf = qs('tog-confidential'), togSpec = qs('tog-special');
+  const divider = qs('recipient-divider');
+  const blurb = qs('mail-mode-blurb');
 
   // Reset both toggles
   if (togConf) togConf.classList.remove('on');
@@ -1490,6 +1493,19 @@ function setMailMode(mode) {
   // Set the hidden toggle states
   if (mode === 'confidential' && togConf) togConf.classList.add('on');
   if (mode === 'special' && togSpec) togSpec.classList.add('on');
+
+  // Hide "Recipient" label on special case
+  if (divider) divider.style.display = mode === 'special' ? 'none' : '';
+
+  // Update blurb
+  if (blurb) {
+    const blurbs = {
+      regular: 'Standard mail — search and select a recipient to log against.',
+      confidential: 'Pickup only — scanning and forwarding are blocked. Client will see a confidential notice.',
+      special: 'No recipient needed — enter the name as written on the envelope for future assignment.'
+    };
+    blurb.textContent = blurbs[mode];
+  }
 
   // Fire the toggle handlers
   onConfidentialToggle();
