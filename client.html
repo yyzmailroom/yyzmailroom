@@ -536,13 +536,18 @@
   /* ── Subscription switcher ─────────────────────────── */
   .sub-switcher {
     display: flex; gap: 6px;
-    padding: 10px 20px;
+    padding: 10px 16px;
     background: var(--white);
     border-bottom: 1px solid var(--border);
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     align-items: center;
+    scrollbar-width: none;
   }
   .sub-switcher::-webkit-scrollbar { display: none; }
+  .sub-switcher::after {
+    content: ''; flex-shrink: 0; width: 8px;
+  }
   .sub-pill {
     padding: 6px 14px;
     font-size: 12px; font-weight: 500;
@@ -551,7 +556,7 @@
     background: transparent; color: var(--ink-3);
     white-space: nowrap; transition: all 0.15s;
     display: inline-flex; align-items: center; gap: 5px;
-    font-family: inherit;
+    font-family: inherit; flex-shrink: 0;
   }
   .sub-pill:hover { color: var(--ink); border-color: var(--ink-3); background: var(--bg); }
   .sub-pill.active {
@@ -610,9 +615,12 @@
     .header { padding: 0 12px; height: 48px; }
     .header-logo img { height: 24px !important; }
     .client-name strong { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
-    .tabs { padding: 0 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .tab { padding: 6px 12px; font-size: 11px; }
+    .tabs-bar-wrap { padding: 6px 12px; top: 48px; gap: 8px; flex-wrap: wrap; }
+    .tab { padding: 6px 14px; font-size: 11px; }
+    .sub-switcher { padding: 8px 12px; }
+    .sub-pill { padding: 5px 12px; font-size: 11px; }
     .plan-card-header { flex-wrap: wrap; gap: 8px; }
+    .refresh-btn { font-size: 11px; padding: 4px 10px; }
   }
   /* ── In-app modal ────────────────────────────────────── */
   .app-modal-overlay {
