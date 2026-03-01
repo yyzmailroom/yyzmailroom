@@ -468,6 +468,16 @@
   .expiry-chip:hover { border-color: var(--ink-3); color: var(--ink); }
   .expiry-chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
 
+  /* ── Inline toggle buttons (Confidential/Special) ──── */
+  .inline-tog {
+    font-size: 11px; padding: 6px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--white); color: var(--ink-3);
+    cursor: pointer; font-family: inherit; transition: all 0.15s;
+    white-space: nowrap; font-weight: 500;
+  }
+  .inline-tog:hover { border-color: var(--ink-3); color: var(--ink); }
+  .inline-tog.active { background: var(--amber-bg); border-color: #FFB300; color: #E65100; font-weight: 600; }
+
   /* ── Buttons ────────────────────────────────────────── */
   .btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -1209,13 +1219,23 @@ function renderLogForm(container) {
       </div>
       <div style="background:var(--white); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow)">
 
-        <div class="form-divider">Recipient</div>
+        <div class="form-divider" id="recipient-divider">Recipient</div>
         <div id="recipient-section">
-          <div class="form-group recipient-search-wrap">
-            <label>Search Recipient</label>
-            <input type="text" id="log-recipient-search" placeholder="Type name or company..." autocomplete="off"
-              oninput="searchRecipients(this.value)">
-            <div class="recipient-results" id="recipient-results" style="display:none"></div>
+          <div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <div class="form-group recipient-search-wrap" style="flex:1;min-width:180px;margin-bottom:0">
+              <input type="text" id="log-recipient-search" placeholder="Search recipient..." autocomplete="off"
+                oninput="searchRecipients(this.value)">
+              <div class="recipient-results" id="recipient-results" style="display:none"></div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;padding-bottom:1px">
+              <button type="button" class="inline-tog" id="tog-confidential-btn" onclick="onConfidentialToggle()" title="Blocks scan & forward">🔒 Confidential</button>
+              <button type="button" class="inline-tog" id="tog-special-btn" onclick="onSpecialCaseToggle()" title="No recipient needed">⚠️ Special</button>
+            </div>
+          </div>
+          <!-- Hidden toggles for state tracking -->
+          <div style="display:none">
+            <div class="toggle" id="tog-confidential"></div>
+            <div class="toggle" id="tog-special"></div>
           </div>
           <div id="selected-recipient-box" style="display:none; background:var(--bg); border-radius:var(--radius-sm); padding:10px 12px; margin-bottom:14px; font-size:13px">
             <div style="font-weight:500" id="sel-rec-name"></div>
@@ -1322,19 +1342,11 @@ function renderLogForm(container) {
           </div>
         </div>
 
-        <div class="toggle-row" style="margin-bottom:14px">
-          <span class="toggle-label">Confidential <span style="font-size:11px; color:var(--ink-4)">(blocks scan & forward)</span></span>
-          <div class="toggle" id="tog-confidential" onclick="onConfidentialToggle()"></div>
-        </div>
         <div id="confidential-notice" style="display:none;padding:8px 12px;background:var(--amber-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--amber);margin-bottom:10px">
           🔒 <strong>Confidential mail</strong> — Pickup only. No scanning or forwarding. Client will see this notice.
         </div>
         <div id="forwarding-notice" style="display:none;padding:8px 12px;background:var(--blue-bg);border-radius:var(--radius-sm);font-size:12px;color:var(--blue);margin-bottom:10px">
           📬 <strong>Forwarding plan</strong> — This item will be queued for forwarding first week of next month.
-        </div>
-        <div class="toggle-row" style="margin-bottom:14px">
-          <span class="toggle-label">Special Case <span style="font-size:11px; color:var(--ink-4)">(no recipient needed)</span></span>
-          <div class="toggle" id="tog-special" onclick="onSpecialCaseToggle()"></div>
         </div>
 
         <div id="special-case-name-wrap" style="display:none" class="form-group">
@@ -1382,6 +1394,8 @@ function onConfidentialToggle() {
   const tog = qs('tog-confidential');
   tog.classList.toggle('on');
   const isConf    = tog.classList.contains('on');
+  const btn = qs('tog-confidential-btn');
+  if (btn) btn.classList.toggle('active', isConf);
   const scanField = qs('log-scan');
   const scanWrap  = qs('scan-field-wrap');
   if (scanField) { scanField.disabled = isConf; scanField.style.opacity = isConf ? '0.4' : '1'; if (isConf) scanField.value = ''; }
@@ -1397,6 +1411,8 @@ function onSpecialCaseToggle() {
   const tog = qs('tog-special');
   tog.classList.toggle('on');
   const isSpecial = tog.classList.contains('on');
+  const btn = qs('tog-special-btn');
+  if (btn) btn.classList.toggle('active', isSpecial);
 
   // Recipient section — hide when special case
   const recSection   = qs('recipient-section');
@@ -1407,21 +1423,23 @@ function onSpecialCaseToggle() {
 
   if (recSection)  recSection.style.display  = isSpecial ? 'none' : 'block';
   if (recDivider)  recDivider.style.display  = isSpecial ? 'none' : 'block';
-  if (specialNote) specialNote.style.display = 'none'; // old notice hidden (name field replaces it)
+  if (specialNote) specialNote.style.display = 'none';
   if (nameWrap)    nameWrap.style.display    = isSpecial ? 'block' : 'none';
   if (reasonWrap)  reasonWrap.style.display  = isSpecial ? 'block' : 'none';
 
-  // Hide scan URL, note to client, confidential when special case (simplified intake)
+  // Hide scan, note to client, confidential when special case
   const scanWrap    = qs('scan-field-wrap');
   const noteClient  = document.querySelector('#log-note-client')?.closest('.form-group');
-  const confRow     = document.querySelector('#tog-confidential')?.closest('.toggle-row');
   const confNotice  = qs('confidential-notice');
   const fwdNotice   = qs('forwarding-notice');
   if (scanWrap)   scanWrap.style.display   = isSpecial ? 'none' : '';
   if (noteClient) noteClient.style.display = isSpecial ? 'none' : '';
-  if (confRow)    confRow.style.display    = isSpecial ? 'none' : '';
   if (confNotice) confNotice.style.display = 'none';
   if (fwdNotice)  fwdNotice.style.display  = 'none';
+
+  // Also hide/show the confidential button
+  const confBtn = qs('tog-confidential-btn');
+  if (confBtn) confBtn.style.display = isSpecial ? 'none' : '';
 
   if (!isSpecial) clearRecipient();
 }
